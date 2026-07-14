@@ -54,16 +54,45 @@ class AnchorPolicy:
         actions: dict[str, dict[str, float | int]] = {}
         for symbol, asset in observation["assets"].items():
             inventory = int(asset["dual_inventory"])
+            mandate = str(asset["desk_mandate"]).lower()
+            bid_offset = 18.0
+            ask_offset = 18.0
+            bid_size = 2 if inventory <= 48 else 0
+            ask_size = 2 if inventory >= -48 else 0
+            if "adverse-selection alert" in mandate:
+                bid_size = min(bid_size, 1)
+                ask_size = min(ask_size, 1)
+                primary_mid = 0.5 * (float(asset["primary_bid"]) + float(asset["primary_ask"]))
+                bid_offset = min(
+                    80.0,
+                    max(
+                        bid_offset,
+                        10_000.0 * (1.0 - float(asset["dual_ask"]) / primary_mid) + 0.25,
+                    ),
+                )
+                ask_offset = min(
+                    80.0,
+                    max(
+                        ask_offset,
+                        10_000.0 * (float(asset["dual_bid"]) / primary_mid - 1.0) + 0.25,
+                    ),
+                )
+            if "long-inventory recovery" in mandate:
+                bid_size = 0 if "liquidity campaign" in mandate else min(bid_size, 1)
+                ask_size = max(1, ask_size)
+            if "short-inventory recovery" in mandate:
+                ask_size = 0 if "liquidity campaign" in mandate else min(ask_size, 1)
+                bid_size = max(1, bid_size)
             actions[symbol] = {
-                "bid_offset_bps": 18.0,
-                "ask_offset_bps": 18.0,
-                "bid_size": 2 if inventory <= 48 else 0,
-                "ask_size": 2 if inventory >= -48 else 0,
+                "bid_offset_bps": bid_offset,
+                "ask_offset_bps": ask_offset,
+                "bid_size": bid_size,
+                "ask_size": ask_size,
             }
         return actions
 
 
-def _run_policy(policy: Any, scenario: ScenarioSpec) -> dict[str, float]:
+def _run_policy(policy: Any, scenario: ScenarioSpec) -> dict[str, Any]:
     reset = getattr(policy, "reset_policy", None)
     if reset is not None:
         reset()
@@ -78,7 +107,7 @@ def _run_policy(policy: Any, scenario: ScenarioSpec) -> dict[str, float]:
     return metrics
 
 
-def _run_candidate(candidate_path: Path, scenario: ScenarioSpec) -> dict[str, float]:
+def _run_candidate(candidate_path: Path, scenario: ScenarioSpec) -> dict[str, Any]:
     # A fresh process per scenario prevents state leakage between fixed evaluation paths.
     with PolicyRuntime(
         candidate_path,
@@ -89,7 +118,7 @@ def _run_candidate(candidate_path: Path, scenario: ScenarioSpec) -> dict[str, fl
         return _run_policy(policy, scenario)
 
 
-def _is_feasible(metrics: dict[str, float]) -> bool:
+def _is_feasible(metrics: dict[str, Any]) -> bool:
     return bool(
         metrics["violations"] == 0.0
         and metrics["max_abs_inventory"] <= 50.0
@@ -99,11 +128,11 @@ def _is_feasible(metrics: dict[str, float]) -> bool:
 
 
 @lru_cache(maxsize=None)
-def _anchor_metrics(scenario: ScenarioSpec) -> dict[str, float]:
+def _anchor_metrics(scenario: ScenarioSpec) -> dict[str, Any]:
     return _run_policy(AnchorPolicy, scenario)
 
 
-def _scenario_score(candidate: dict[str, float], anchor: dict[str, float]) -> float:
+def _scenario_score(candidate: dict[str, Any], anchor: dict[str, Any]) -> float:
     delta = candidate["objective"] - anchor["objective"]
     score_scale = 120.0 + 0.45 * abs(anchor["objective"])
     score = 50.0 + 50.0 * math.tanh(delta / score_scale)
@@ -236,7 +265,8 @@ def main() -> None:
                 f"risk_rms={metrics['inventory_risk_rms']:.2f} "
                 f"drawdown={metrics['max_drawdown']:.2f} "
                 f"service={metrics['liquidity_service']:.3f} "
-                f"fills={metrics['fills']:.0f}"
+                f"fills={metrics['fills']:.0f} "
+                f"violations={metrics['violation_reasons']}"
             )
     print("---")
     print(f"feasible_scenarios: {result['feasible_scenarios']:.0f}/{len(result['rows'])}")

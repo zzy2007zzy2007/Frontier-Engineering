@@ -5,6 +5,10 @@ equities. The primary listing is a fair-value reference, while competitiveness a
 top of book determines execution. The policy must balance spread capture, adverse selection,
 fees, changing liquidity, and inventory risk.
 
+Each observation also contains compositional, natural-language desk mandates. A policy must branch
+between liquidity support, adverse-selection defense, and inventory recovery; one static set of
+numeric quote parameters is deliberately insufficient for feasibility.
+
 Edit only the EVOLVE-BLOCK in `scripts/init.py` and keep
 `decide_quotes(observation) -> dict` working.
 
@@ -35,11 +39,10 @@ python -m unittest discover -s verification -p "test_*.py" -v
 ## Unified evaluation
 
 From the repository root, use benchmark id
-`MarketMaking/inventory_aware_quoting`:
+`MarketMaking/InventoryAwareQuoting`. The included task config makes it directly discoverable:
 
 ```bash
-python -m frontier_eval task=unified \
-  task.benchmark=MarketMaking/inventory_aware_quoting \
+python -m frontier_eval task=inventory_aware_quoting \
   algorithm=openevolve algorithm.iterations=0
 ```
 

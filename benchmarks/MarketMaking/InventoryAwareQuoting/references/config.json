@@ -9,6 +9,11 @@
   "minimum_liquidity_service": 0.20,
   "maker_fee_bps": 0.15,
   "taker_fee_bps": 1.20,
+  "desk_mandates": {
+    "quiet": "active sizes must be at least 2 lots",
+    "toxic": "maker-only and active sizes must be at most 1 lot",
+    "inventory_recovery_threshold": 25
+  },
   "development_scenarios": [
     {"name": "calm_balanced", "seed": 4201},
     {"name": "calm_buy_flow", "seed": 4202},

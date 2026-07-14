@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any, Mapping
 
 import numpy as np
@@ -14,6 +15,15 @@ MIN_QUOTE_RATE = 0.70
 MIN_LIQUIDITY_SERVICE = 0.20
 MAKER_FEE_BPS = 0.15
 TAKER_FEE_BPS = 1.20
+ACTION_FIELDS = frozenset({"bid_offset_bps", "ask_offset_bps", "bid_size", "ask_size"})
+
+
+class ActionValidationError(ValueError):
+    """A candidate-action error with a stable category for optimizer feedback."""
+
+    def __init__(self, category: str, message: str) -> None:
+        super().__init__(message)
+        self.category = category
 
 
 @dataclass(frozen=True)
@@ -178,6 +188,7 @@ class DualMarketSimulator:
         self.aggressive_fills = 0
         self.fees_paid = 0.0
         self.violations = 0
+        self.violation_reasons: dict[str, int] = {}
         self.quoted_sides = 0
         self.total_sides = 0
         self.liquidity_service_sum = 0.0
@@ -274,8 +285,33 @@ class DualMarketSimulator:
         half = mid * spread_bps / 20_000.0
         return mid - half, mid + half
 
+    def _desk_mandate(self, symbol: str) -> str:
+        """Return the human-readable operating instruction active for one asset."""
+
+        clauses: list[str] = []
+        regime = self.regime_path[self.step_index]
+        if regime == "quiet":
+            clauses.append("liquidity campaign: every active side must display at least 2 lots")
+        elif regime == "toxic":
+            clauses.append(
+                "adverse-selection alert: use maker-only quotes and display at most 1 lot per side"
+            )
+
+        inventory = self.dual_inventory[symbol]
+        if inventory >= 25:
+            clauses.append(
+                "long-inventory recovery: bid at most 1 lot and keep the ask active"
+            )
+        elif inventory <= -25:
+            clauses.append(
+                "short-inventory recovery: ask at most 1 lot and keep the bid active"
+            )
+        if not clauses:
+            clauses.append("standard two-sided liquidity service")
+        return "; ".join(clauses)
+
     def observation(self) -> dict[str, Any]:
-        assets: dict[str, dict[str, float | int]] = {}
+        assets: dict[str, dict[str, float | int | str]] = {}
         for symbol in SYMBOLS:
             p_bid, p_ask = self._book(symbol, primary=True)
             d_bid, d_ask = self._book(symbol, primary=False)
@@ -287,6 +323,7 @@ class DualMarketSimulator:
                 "dual_inventory": self.dual_inventory[symbol],
                 "volatility": self.volatility_ema[symbol],
                 "order_imbalance": self.imbalance_ema[symbol],
+                "desk_mandate": self._desk_mandate(symbol),
             }
         return {
             "step": self.step_index,
@@ -302,6 +339,55 @@ class DualMarketSimulator:
         return float(self.cash + marked_positions)
 
     @staticmethod
+    def _validate_action_schema(actions: Any) -> None:
+        """Validate the complete shape and primitive types before checking numeric ranges."""
+
+        if not isinstance(actions, Mapping):
+            raise ActionValidationError("schema_top_level_type", "action must be a mapping")
+        missing_symbols = sorted(set(SYMBOLS) - set(actions))
+        if missing_symbols:
+            raise ActionValidationError(
+                "schema_missing_symbol", f"missing symbols: {', '.join(missing_symbols)}"
+            )
+        unexpected_symbols = sorted(set(actions) - set(SYMBOLS), key=str)
+        if unexpected_symbols:
+            raise ActionValidationError(
+                "schema_unexpected_symbol",
+                f"unexpected symbols: {', '.join(str(value) for value in unexpected_symbols)}",
+            )
+        for symbol in SYMBOLS:
+            raw = actions[symbol]
+            if not isinstance(raw, Mapping):
+                raise ActionValidationError(
+                    "schema_action_type", f"{symbol} action must be a mapping"
+                )
+            missing_fields = sorted(ACTION_FIELDS - set(raw))
+            if missing_fields:
+                raise ActionValidationError(
+                    "schema_missing_field",
+                    f"{symbol} missing fields: {', '.join(missing_fields)}",
+                )
+            unexpected_fields = sorted(set(raw) - ACTION_FIELDS, key=str)
+            if unexpected_fields:
+                raise ActionValidationError(
+                    "schema_unexpected_field",
+                    f"{symbol} unexpected fields: "
+                    f"{', '.join(str(value) for value in unexpected_fields)}",
+                )
+            for field in ACTION_FIELDS:
+                value = raw[field]
+                if isinstance(value, bool) or not isinstance(value, Real):
+                    raise ActionValidationError(
+                        "schema_field_type", f"{symbol}.{field} must be a real number"
+                    )
+            for field in ("bid_size", "ask_size"):
+                value = float(raw[field])
+                if not math.isfinite(value) or abs(value - round(value)) > 1e-9:
+                    raise ActionValidationError(
+                        "schema_size_integer", f"{symbol}.{field} must be a finite integer"
+                    )
+
+    @staticmethod
     def _coerce_action(raw: Mapping[str, Any]) -> tuple[float, float, int, int]:
         bid_offset = float(raw["bid_offset_bps"])
         ask_offset = float(raw["ask_offset_bps"])
@@ -309,21 +395,59 @@ class DualMarketSimulator:
         ask_size_raw = float(raw["ask_size"])
         values = (bid_offset, ask_offset, bid_size_raw, ask_size_raw)
         if not all(math.isfinite(value) for value in values):
-            raise ValueError("non-finite quote action")
-        if isinstance(raw["bid_size"], bool) or isinstance(raw["ask_size"], bool):
-            raise ValueError("quote sizes must be integers, not booleans")
-        if (
-            abs(bid_size_raw - round(bid_size_raw)) > 1e-9
-            or abs(ask_size_raw - round(ask_size_raw)) > 1e-9
-        ):
-            raise ValueError("quote sizes must be integers")
+            raise ActionValidationError("range_non_finite", "quote values must be finite")
         bid_size = int(round(bid_size_raw))
         ask_size = int(round(ask_size_raw))
         if not (1.0 <= bid_offset <= 80.0 and 1.0 <= ask_offset <= 80.0):
-            raise ValueError("quote offsets must be in [1, 80] bps")
+            raise ActionValidationError(
+                "range_offset", "quote offsets must be in [1, 80] bps"
+            )
         if not (0 <= bid_size <= 5 and 0 <= ask_size <= 5):
-            raise ValueError("quote sizes must be in [0, 5]")
+            raise ActionValidationError("range_size", "quote sizes must be in [0, 5]")
         return bid_offset, ask_offset, bid_size, ask_size
+
+    def _record_violation(self, category: str) -> None:
+        self.violations += 1
+        self.violation_reasons[category] = self.violation_reasons.get(category, 0) + 1
+
+    def _enforce_desk_mandate(
+        self,
+        symbol: str,
+        action: tuple[float, float, int, int],
+        candidate_bid: float,
+        candidate_ask: float,
+        dual_bid: float,
+        dual_ask: float,
+    ) -> None:
+        _, _, bid_size, ask_size = action
+        regime = self.regime_path[self.step_index]
+        inventory = self.dual_inventory[symbol]
+        if regime == "quiet" and any(size == 1 for size in (bid_size, ask_size)):
+            raise ActionValidationError(
+                "mandate_liquidity_size",
+                f"{symbol} active sizes must be at least 2 during a liquidity campaign",
+            )
+        if regime == "toxic":
+            if bid_size > 1 or ask_size > 1:
+                raise ActionValidationError(
+                    "mandate_toxic_size", f"{symbol} sizes must be at most 1 under toxic flow"
+                )
+            if (bid_size > 0 and candidate_bid >= dual_ask) or (
+                ask_size > 0 and candidate_ask <= dual_bid
+            ):
+                raise ActionValidationError(
+                    "mandate_maker_only", f"{symbol} must not cross the DUAL book under toxic flow"
+                )
+        if inventory >= 25 and (bid_size > 1 or ask_size == 0):
+            raise ActionValidationError(
+                "mandate_long_recovery",
+                f"{symbol} must limit buying and keep selling active while long",
+            )
+        if inventory <= -25 and (ask_size > 1 or bid_size == 0):
+            raise ActionValidationError(
+                "mandate_short_recovery",
+                f"{symbol} must limit selling and keep buying active while short",
+            )
 
     @staticmethod
     def _incoming_quantity(size: int, quantile: float) -> int:
@@ -344,7 +468,7 @@ class DualMarketSimulator:
         fee = price * quantity * fee_bps / 10_000.0
         cost = price * quantity + fee
         if self.cash + 1e-12 < cost:
-            self.violations += 1
+            self._record_violation("risk_cash_shortfall")
             return False
         self.cash -= cost
         self.dual_inventory[symbol] += quantity
@@ -364,13 +488,33 @@ class DualMarketSimulator:
             raise RuntimeError("scenario already completed")
         prepared: dict[str, tuple[float, float, int, int]] = {}
         quote_context: dict[str, tuple[float, float, float, float, float, float]] = {}
+        schema_valid = True
+        try:
+            self._validate_action_schema(actions)
+        except ActionValidationError as exc:
+            schema_valid = False
+            self._record_violation(exc.category)
+            actions = {
+                symbol: {
+                    "bid_offset_bps": 80.0,
+                    "ask_offset_bps": 80.0,
+                    "bid_size": 0,
+                    "ask_size": 0,
+                }
+                for symbol in SYMBOLS
+            }
         for symbol in SYMBOLS:
             self.total_sides += 2
             try:
                 action = self._coerce_action(actions[symbol])
                 inventory = self.dual_inventory[symbol]
-                if inventory + action[2] > POSITION_LIMIT or inventory - action[3] < -POSITION_LIMIT:
-                    raise ValueError("quote could breach the position limit")
+                if (
+                    inventory + action[2] > POSITION_LIMIT
+                    or inventory - action[3] < -POSITION_LIMIT
+                ):
+                    raise ActionValidationError(
+                        "risk_position_limit", "quote could breach the position limit"
+                    )
                 primary_reference = self.primary_mid[symbol]
                 dual_bid, dual_ask = self._book(symbol, primary=False)
                 candidate_bid = primary_reference * (1.0 - action[0] / 10_000.0)
@@ -386,14 +530,23 @@ class DualMarketSimulator:
                     bid_edge,
                     ask_edge,
                 )
+                if schema_valid:
+                    self._enforce_desk_mandate(
+                        symbol,
+                        action,
+                        candidate_bid,
+                        candidate_ask,
+                        dual_bid,
+                        dual_ask,
+                    )
                 # Only resting quotes provide liquidity. A marketable limit order is a taker
                 # action and therefore earns neither quote-rate nor service credit.
                 if action[2] > 0 and candidate_bid < dual_ask:
                     self._record_service(bid_edge, action[0], action[2])
                 if action[3] > 0 and candidate_ask > dual_bid:
                     self._record_service(ask_edge, action[1], action[3])
-            except Exception:
-                self.violations += 1
+            except ActionValidationError as exc:
+                self._record_violation(exc.category)
                 prepared[symbol] = (80.0, 80.0, 0, 0)
                 quote_context[symbol] = (0.0, math.inf, 0.0, math.inf, -math.inf, -math.inf)
 
@@ -402,7 +555,9 @@ class DualMarketSimulator:
             spec = ASSET_SPECS[symbol]
             series = self._tape[symbol]
             bid_offset, ask_offset, bid_size, ask_size = prepared[symbol]
-            candidate_bid, candidate_ask, dual_bid, dual_ask, bid_edge, ask_edge = quote_context[symbol]
+            candidate_bid, candidate_ask, dual_bid, dual_ask, bid_edge, ask_edge = (
+                quote_context[symbol]
+            )
             flow_signal = float(series["flow_signal"][step])
             arrival = float(series["arrival_multiplier"][step])
             toxicity = float(series["toxicity"][step])
@@ -449,8 +604,12 @@ class DualMarketSimulator:
             shock = float(series["shock"][step])
             new_fair = max(1.0, old_fair * math.exp(shock))
             realised_return = abs(new_fair / old_fair - 1.0)
-            self.volatility_ema[symbol] = 0.92 * self.volatility_ema[symbol] + 0.08 * realised_return
-            self.imbalance_ema[symbol] = 0.80 * self.imbalance_ema[symbol] + 0.20 * math.tanh(flow_signal)
+            self.volatility_ema[symbol] = (
+                0.92 * self.volatility_ema[symbol] + 0.08 * realised_return
+            )
+            self.imbalance_ema[symbol] = (
+                0.80 * self.imbalance_ema[symbol] + 0.20 * math.tanh(flow_signal)
+            )
             self.fair[symbol] = new_fair
             self.primary_mid[symbol] = new_fair * (1.0 + float(series["primary_noise"][step]))
             self.dual_basis[symbol] = (
@@ -475,7 +634,7 @@ class DualMarketSimulator:
         self.step_index += 1
         self.equity_path.append(self.equity())
 
-    def metrics(self) -> dict[str, float]:
+    def metrics(self) -> dict[str, Any]:
         peak = self.equity_path[0]
         max_drawdown = 0.0
         for value in self.equity_path:
@@ -511,6 +670,7 @@ class DualMarketSimulator:
             "aggressive_fills": float(self.aggressive_fills),
             "fees_paid": float(self.fees_paid),
             "violations": float(self.violations),
+            "violation_reasons": dict(sorted(self.violation_reasons.items())),
         }
 
 

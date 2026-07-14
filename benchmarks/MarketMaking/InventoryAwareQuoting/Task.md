@@ -20,8 +20,9 @@ F[t+1] = F[t] * exp(sigma[t] * z[t])
 
 Price shocks mix market-wide, asset-specific, and persistent flow components. The market switches
 between quiet, normal, volatile, and toxic-liquidity regimes in deterministic pseudo-random
-segments. The regime is not observed directly; its effects appear through prices, the volatility
-estimate, order imbalance, liquidity, and adverse selection.
+segments. The latent regime label is not observed directly. Its effects appear through prices,
+the volatility estimate, order imbalance, liquidity, adverse selection, and a desk mandate that
+states only the currently applicable operating constraints.
 
 The primary and DUAL books share the latent fair value but have independent observation noise and
 a mean-reverting DUAL basis. A candidate offset is converted into a price around the primary mid.
@@ -55,9 +56,14 @@ claim of cryptographically hidden test data.
 - current `dual_inventory`;
 - an exponentially weighted `volatility` estimate;
 - an exponentially weighted `order_imbalance` in `[-1, 1]`.
+- a per-asset natural-language `desk_mandate`, composed from instructions such as liquidity
+  support, adverse-selection defense, and inventory recovery.
 
-The current regime label, scenario name, seed, future prices, future flow, and fill random numbers
-are not present in the observation.
+The policy must translate these mandates into quote behavior. A fixed numeric action cannot satisfy
+all combinations: a liquidity campaign requires at least two lots on every active side, while an
+adverse-selection alert caps active sides at one lot and requires maker-only quotes. Inventory
+recovery instructions add asymmetric limits. The current regime label, scenario name, seed, future
+prices, future flow, and fill random numbers are not present in the observation.
 
 ## Action interface
 
@@ -89,6 +95,9 @@ to the future tape. It is not a general operating-system sandbox against hostile
 - Every DUAL inventory must remain in `[-50, 50]`.
 - Every required symbol and field must be present and finite.
 - Sizes must be integers (booleans are rejected); offsets and sizes must stay in range.
+- Every active desk mandate must be respected. Liquidity campaigns require active sizes of at
+  least 2; adverse-selection alerts require maker-only sizes of at most 1; inventory recovery
+  limits the inventory-increasing side and keeps the reducing side active.
 - At least 70% of quote sides must be active in every scenario.
 - Liquidity service must be at least 0.20 in every scenario. Service rewards displayed size and
   decays with distance behind the current DUAL best quote.
@@ -98,6 +107,8 @@ to the future tape. It is not a general operating-system sandbox against hostile
 
 Any hard-constraint failure sets `valid=0` and the ranking `combined_score=0`. A separate
 `diagnostic_score` remains continuous so an optimizer can see whether an invalid design improved.
+Artifacts report categorized violation counts such as `schema_missing_field`, `range_offset`,
+`mandate_maker_only`, and `risk_position_limit`, so structural and numeric failures remain distinct.
 
 ## Objective and score
 

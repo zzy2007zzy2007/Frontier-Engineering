@@ -54,7 +54,52 @@ class SimulatorTests(unittest.TestCase):
         actions["NVDA"]["bid_offset_bps"] = float("nan")
         simulator.step_quotes(actions)
         self.assertEqual(simulator.violations, 1)
+        self.assertEqual(simulator.violation_reasons, {"range_non_finite": 1})
         self.assertEqual(simulator.dual_inventory["NVDA"], 0)
+
+    def test_schema_errors_are_distinct_from_numeric_range_errors(self) -> None:
+        missing = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        missing_actions = _quotes(16.0, 2)
+        del missing_actions["NVDA"]["ask_size"]
+        missing.step_quotes(missing_actions)
+        self.assertEqual(missing.violation_reasons, {"schema_missing_field": 1})
+
+        wrong_type = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        wrong_type_actions = _quotes(16.0, 2)
+        wrong_type_actions["NVDA"]["bid_size"] = "two"  # type: ignore[assignment]
+        wrong_type.step_quotes(wrong_type_actions)
+        self.assertEqual(wrong_type.violation_reasons, {"schema_field_type": 1})
+
+        unexpected_symbol = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        unexpected_symbol_actions = _quotes(16.0, 2)
+        unexpected_symbol_actions[7] = unexpected_symbol_actions["NVDA"]  # type: ignore[index]
+        unexpected_symbol.step_quotes(unexpected_symbol_actions)
+        self.assertEqual(
+            unexpected_symbol.violation_reasons,
+            {"schema_unexpected_symbol": 1},
+        )
+
+        out_of_range = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        out_of_range_actions = _quotes(16.0, 2)
+        out_of_range_actions["NVDA"]["bid_offset_bps"] = 81.0
+        out_of_range.step_quotes(out_of_range_actions)
+        self.assertEqual(out_of_range.violation_reasons, {"range_offset": 1})
+
+    def test_semantic_mandates_require_regime_dependent_structure(self) -> None:
+        quiet = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        quiet.regime_path[0] = "quiet"
+        self.assertIn("liquidity campaign", quiet.observation()["assets"]["NVDA"]["desk_mandate"])
+        quiet.step_quotes(_quotes(16.0, 1))
+        self.assertEqual(quiet.violation_reasons, {"mandate_liquidity_size": 3})
+
+        toxic = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)
+        toxic.regime_path[0] = "toxic"
+        self.assertIn(
+            "adverse-selection alert",
+            toxic.observation()["assets"]["NVDA"]["desk_mandate"],
+        )
+        toxic.step_quotes(_quotes(16.0, 2))
+        self.assertEqual(toxic.violation_reasons, {"mandate_toxic_size": 3})
 
     def test_position_limit_rejects_worst_case_quote(self) -> None:
         simulator = DualMarketSimulator(scenario=SCENARIOS[0], steps=1)

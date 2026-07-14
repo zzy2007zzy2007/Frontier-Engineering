@@ -253,7 +253,7 @@ We welcome new engineering problem ideas — even without complete verification 
     </tr>
     <tr>
       <td><b>MarketMaking</b></td>
-      <td><code>inventory_aware_quoting</code></td>
+      <td><code>InventoryAwareQuoting</code></td>
       <td>Inventory-aware DUAL quoting under adverse selection and position limits</td>
     </tr>
     <tr>

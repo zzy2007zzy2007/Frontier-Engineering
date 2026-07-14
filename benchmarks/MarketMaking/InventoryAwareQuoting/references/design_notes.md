@@ -53,5 +53,12 @@ and host resource limits.
 
 Regression tests compare a tuned fixed-width/inventory-skew policy with a policy that reacts to
 observed order imbalance. The adaptive policy must remain feasible and outperform the fixed policy
-by a material margin. This guards against accidental changes that collapse the task back into a
-three-constant grid search.
+by a material margin. A separate test verifies that unconditional numeric quotes violate the
+compositional desk mandates: quiet liquidity campaigns and toxic-flow defense impose incompatible
+size requirements, while inventory recovery adds state-dependent asymmetry. This guards against
+accidental changes that collapse the task back into a small grid search.
+
+Action validation is intentionally staged. The evaluator first checks the complete action schema
+(symbols, fields, and primitive types), then numeric ranges, then position and mandate constraints.
+Stable violation categories are exposed in development artifacts so an optimizer can distinguish a
+malformed program from a slightly out-of-range quote or an economically invalid risk decision.

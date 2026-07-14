@@ -8,7 +8,7 @@
 
 ## 任务
 
-- `inventory_aware_quoting`：在流动性、波动率、订单流和 basis 不断变化时，为 DUAL 市场报价并
+- `InventoryAwareQuoting`：在流动性、波动率、订单流和 basis 不断变化时，为 DUAL 市场报价并
   控制库存。
 
 任务使用三组合成品种：`NVDA/NVDA_DUAL`、`JPM/JPM_DUAL` 和

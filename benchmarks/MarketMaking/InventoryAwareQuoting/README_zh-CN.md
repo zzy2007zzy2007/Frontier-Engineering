@@ -4,6 +4,9 @@
 报价相对 DUAL 最优买卖价的竞争力决定成交。策略需要同时权衡价差收益、不利选择、手续费、
 流动性变化和库存风险。
 
+每次观察还包含可组合的自然语言做市台指令。策略需要在流动性支持、毒性流防御和库存回收之间
+进行结构化分支；固定的一组报价数值被有意设计为无法通过全部可行性约束。
+
 只能修改 `scripts/init.py` 的 EVOLVE-BLOCK，并保持
 `decide_quotes(observation) -> dict` 接口有效。
 
@@ -33,11 +36,11 @@ python -m unittest discover -s verification -p "test_*.py" -v
 
 ## Unified 评测
 
-在仓库根目录使用 benchmark id `MarketMaking/inventory_aware_quoting`：
+在仓库根目录使用 benchmark id `MarketMaking/InventoryAwareQuoting`。仓库已包含对应 task config，
+因此可以直接发现并运行：
 
 ```bash
-python -m frontier_eval task=unified \
-  task.benchmark=MarketMaking/inventory_aware_quoting \
+python -m frontier_eval task=inventory_aware_quoting \
   algorithm=openevolve algorithm.iterations=0
 ```
 

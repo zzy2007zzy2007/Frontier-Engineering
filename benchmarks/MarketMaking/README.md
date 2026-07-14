@@ -10,7 +10,7 @@ inventory control, cross-market dislocations, changing liquidity, and risk const
 
 ## Task
 
-- `inventory_aware_quoting`: quote the DUAL listings while controlling inventory across changing
+- `InventoryAwareQuoting`: quote the DUAL listings while controlling inventory across changing
   liquidity, volatility, order-flow, and basis regimes.
 
 The task uses three synthetic pairs named after familiar equities:

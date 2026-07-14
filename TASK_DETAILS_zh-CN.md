@@ -253,7 +253,7 @@ Frontier-Eng 目前已覆盖以下领域的任务。每个任务均配有可运�
     </tr>
     <tr>
       <td><b>MarketMaking</b></td>
-      <td><code>inventory_aware_quoting</code></td>
+      <td><code>InventoryAwareQuoting</code></td>
       <td>在不利选择与仓位约束下进行库存感知的 DUAL 做市报价</td>
     </tr>
     <tr>
