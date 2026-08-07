@@ -1,0 +1,280 @@
+"""CVRP verification evaluator.
+
+Runs a candidate solver program on a fixed set of CVRP instances, validates
+the produced routes (full coverage, no duplicates, capacity respected) and
+scores each instance relative to the precomputed reference distance:
+
+    score = min(100, 100 * reference_distance / candidate_distance)
+
+An invalid/crashing/timing-out candidate scores 0 on that instance and marks
+the whole run invalid.
+
+Usage (inside the CVRP task directory):
+    python verification/evaluator.py baseline/solver.py
+    python verification/evaluator.py baseline/solver.py --instances VRP-19-2 VRP-32-5
+
+Environment overrides:
+    CVRP_EVAL_TIMEOUT_S      per-instance subprocess timeout (default 60)
+    CVRP_EVAL_INSTANCES      space/comma separated subset of instance names
+    CVRP_EVAL_MAX_INSTANCES  cap on number of instances
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+import traceback
+from pathlib import Path
+from typing import Any
+
+TASK_ROOT = Path(__file__).resolve().parents[1]  # <repo>/benchmarks/VehicleRouting/CVRP
+INSTANCES_DIR = TASK_ROOT / "data" / "instances"
+REFERENCE_JSON = TASK_ROOT / "data" / "reference.json"
+
+DEFAULT_TIMEOUT_S = 60
+
+
+def parse_instance(path: Path) -> dict:
+    """Parse a TSPLIB-style CVRP .vrp file into an instance dict."""
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    coords: dict[int, tuple[float, float]] = {}
+    demands: dict[int, int] = {}
+    capacity = 0
+    section = None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        upper = line.upper()
+        if upper.startswith("CAPACITY"):
+            capacity = int(line.split(":")[-1].strip())
+            continue
+        if upper == "NODE_COORD_SECTION":
+            section = "coords"
+            continue
+        if upper == "DEMAND_SECTION":
+            section = "demand"
+            continue
+        if upper == "DEPOT_SECTION":
+            section = None
+            continue
+        if upper == "EOF" or upper.startswith(("EDGE_WEIGHT", "DISPLAY_DATA")):
+            section = None
+            continue
+        if upper.startswith(("NAME", "COMMENT", "TYPE", "DIMENSION")):
+            continue
+        if section == "coords":
+            parts = line.split()
+            if len(parts) >= 3:
+                coords[int(parts[0])] = (float(parts[1]), float(parts[2]))
+        elif section == "demand":
+            parts = line.split()
+            if len(parts) >= 2:
+                demands[int(parts[0])] = int(parts[1])
+    n_customers = max(coords) - 1  # depot is id 1, customers are ids 2..n+1
+    pts = [coords[1]] + [coords[i] for i in range(2, n_customers + 2)]
+    dist = [[0] * (n_customers + 1) for _ in range(n_customers + 1)]
+    for i in range(n_customers + 1):
+        for j in range(n_customers + 1):
+            dx = pts[i][0] - pts[j][0]
+            dy = pts[i][1] - pts[j][1]
+            dist[i][j] = int(round(math.hypot(dx, dy)))
+    return {
+        "name": path.stem,
+        "n": n_customers,
+        "capacity": capacity,
+        "demand": [0] + [demands.get(i, 0) for i in range(2, n_customers + 2)],
+        "distance": dist,
+    }
+
+
+def route_distance(routes: list, dist: list[list[int]]) -> int:
+    total = 0
+    for seq in routes:
+        if not seq:
+            continue
+        total += dist[0][seq[0]]
+        for a, b in zip(seq, seq[1:]):
+            total += dist[a][b]
+        total += dist[seq[-1]][0]
+    return total
+
+
+def validate(routes: Any, inst: dict) -> tuple[bool, str, int | None]:
+    """Return (ok, error_message, total_distance)."""
+    n, cap, demand = inst["n"], inst["capacity"], inst["demand"]
+    if not isinstance(routes, list):
+        return False, "routes is not a list", None
+    seen: list[int] = []
+    for seq in routes:
+        if not isinstance(seq, list):
+            return False, "a route is not a list", None
+        load = 0
+        for c in seq:
+            if not isinstance(c, int) or isinstance(c, bool):
+                return False, f"route contains non-integer {c!r}", None
+            if c < 1 or c > n:
+                return False, f"customer id {c} out of range 1..{n}", None
+            if c in seen:
+                return False, f"customer {c} visited more than once", None
+            seen.append(c)
+            load += demand[c]
+        if load > cap:
+            return False, f"route {seq} exceeds capacity {cap} (load {load})", None
+    if set(seen) != set(range(1, n + 1)):
+        missing = set(range(1, n + 1)) - set(seen)
+        return False, f"customers not served: {sorted(missing)}", None
+    return True, "", route_distance(routes, inst["distance"])
+
+
+def run_candidate(
+    python: str, solver_path: Path, inst_path: Path, out_path: Path, timeout: float
+) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            [python, str(solver_path), str(inst_path), str(out_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(solver_path.parent),
+        )
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    except OSError as exc:
+        return False, f"os error: {exc}"
+    if proc.returncode != 0:
+        return False, f"exited with code {proc.returncode}: {(proc.stderr or '')[:200]}"
+    return True, ""
+
+
+def load_reference() -> dict[str, float]:
+    if REFERENCE_JSON.is_file():
+        raw = json.loads(REFERENCE_JSON.read_text(encoding="utf-8"))
+        return {k: float(v) for k, v in raw.items()}
+    return {}
+
+
+def _parse_env_str(name: str) -> str | None:
+    raw = __import__("os").environ.get(name, "").strip()
+    return raw or None
+
+
+def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, Any]:
+    solver_path = Path(program_path).resolve()
+    if not solver_path.is_file():
+        raise FileNotFoundError(f"candidate solver not found: {solver_path}")
+
+    timeout = float(_parse_env_str("CVRP_EVAL_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    inst_names = _parse_env_str("CVRP_EVAL_INSTANCES")
+    max_instances = _parse_env_str("CVRP_EVAL_MAX_INSTANCES")
+
+    inst_paths = sorted(INSTANCES_DIR.glob("*.vrp"))
+    if inst_names:
+        picked = [p for n in inst_names.replace(",", " ").split() for p in inst_paths if p.stem == n]
+        if picked:
+            inst_paths = picked
+    if max_instances:
+        inst_paths = inst_paths[: int(max_instances)]
+
+    reference = load_reference()
+    python = sys.executable
+    tmp_dir = Path(tempfile.mkdtemp(prefix="cvrp_eval_"))
+
+    rows = []
+    for inst_path in inst_paths:
+        inst = parse_instance(inst_path)
+        out_path = tmp_dir / f"{inst['name']}.out.json"
+        ok, err = run_candidate(python, solver_path, inst_path, out_path, timeout)
+        score = 0.0
+        cand_dist = None
+        valid = False
+        note = err if not ok else ""
+        if ok:
+            try:
+                routes = json.loads(out_path.read_text(encoding="utf-8"))
+                valid, note, cand_dist = validate(routes, inst)
+            except Exception as exc:
+                note = f"output parse error: {exc}"
+        if valid and cand_dist is not None and cand_dist > 0:
+            ref = reference.get(inst["name"])
+            if ref is not None and ref > 0:
+                # Score scale: experimental knob to tighten the 100-point bar.
+                # Default 1.0 => score = min(100, 100*ref/cand). A scale s means
+                # a candidate must be s times shorter than the reference to hit
+                # 100 (e.g. s=2/3 => needs cand <= ref*2/3).
+                scale = float(os.environ.get("CVRP_EVAL_SCORE_SCALE", "1.0"))
+                score = min(100.0, scale * 100.0 * ref / cand_dist)
+            else:
+                score = 0.0
+                valid = False
+                note = f"no reference distance for {inst['name']}"
+        rows.append(
+            {
+                "name": inst["name"],
+                "valid": bool(valid),
+                "score": score,
+                "candidate_distance": cand_dist,
+                "note": note or "",
+            }
+        )
+
+    all_valid = all(r["valid"] for r in rows)
+    combined = (
+        statistics.fmean(r["score"] for r in rows) if rows and all_valid else 0.0
+    )
+    metrics: dict[str, Any] = {
+        "combined_score": float(combined),
+        "valid": 1.0 if all_valid and rows else 0.0,
+        "instances": float(len(rows)),
+        "per_instance": {
+            r["name"]: {"score": r["score"], "valid": r["valid"], "note": r["note"]}
+            for r in rows
+        },
+    }
+    artifacts = {
+        "candidate_path": str(solver_path),
+        "timeout_s": timeout,
+        "reference": reference,
+    }
+    return {"metrics": metrics, "artifacts": artifacts}
+
+
+def _print_report(metrics: dict[str, Any]) -> None:
+    print(f"combined_score: {metrics['combined_score']:.2f}")
+    print(f"valid: {metrics['valid']}")
+    for name, info in metrics.get("per_instance", {}).items():
+        flag = "OK " if info["valid"] else "BAD"
+        note = f"  ({info['note']})" if info.get("note") else ""
+        print(f"  {flag} {name}: score={info['score']:.2f}{note}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="CVRP candidate evaluator")
+    parser.add_argument("candidate", help="path to candidate solver.py")
+    parser.add_argument("--instances", nargs="*", default=None)
+    args = parser.parse_args(argv)
+
+    os_env = __import__("os").environ
+    if args.instances:
+        os_env["CVRP_EVAL_INSTANCES"] = " ".join(args.instances)
+
+    t0 = time.perf_counter()
+    try:
+        result = evaluate(args.candidate)
+        metrics, artifacts = result["metrics"], result["artifacts"]
+        _print_report(metrics)
+        print(f"wall time: {time.perf_counter() - t0:.1f}s")
+        return 0
+    except Exception:
+        print(traceback.format_exc(), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
