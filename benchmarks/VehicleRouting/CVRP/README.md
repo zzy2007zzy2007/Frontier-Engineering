@@ -133,10 +133,14 @@ and 95.65).
 
 ## Evaluation integrity
 
-- **Held-out instances**: 12 `VHO-*` instances live in
-  `data/instances_heldout/` and are never exposed to the agent (absent from
-  `agent_files.txt` and `Task.md`), so hardcoding routes by name cannot
-  generalize to them.
+- **Held-out instances**: 12 `VHO-*` instances in `data/instances_heldout/`
+  double the evaluation set to 24 and are scored alongside the public ones.
+  The instance files are in the repo and in the evaluation sandbox (they are
+  part of the scoring input, and `Task.md` tells the agent they exist), so a
+  solver that memorizes only the 12 public instances cannot score high.
+  Per-instance name-keyed hardcoding is additionally rejected statically by
+  `validator.py`, and `CVRP_EVAL_GENERATE_SEED` adds fresh instances at
+  evaluation time so the scored set is not predictable.
 - **Runtime-generated instances**: set `CVRP_EVAL_GENERATE_SEED` (and
   optionally `CVRP_EVAL_GENERATE_COUNT`, default 6) to additionally generate
   fresh instances at evaluation time from that seed. Each generated instance
@@ -162,16 +166,16 @@ and 95.65).
   hardcode per-instance routes; a determinism probe runs the candidate twice
   on small / medium / large probe instances and invalidates non-deterministic
   solvers.
-- **Threat model**: held-out instances are hidden from the agent *context*
-  (absent from `agent_files.txt` and `Task.md`), which prevents an LLM from
-  hardcoding routes by instance name at code-generation time. The instance
-  files themselves are public in the repo — a human who can read the repo
-  could always hand-craft a solver, which no benchmark can prevent. The
-  unified runtime (process and docker isolation) exposes the host repo to the
-  candidate process (framework-level behavior shared by all tasks); the
-  preflight checks deter naive LLM attempts, they are not a sandbox against a
-  malicious human. Scoring only measures solution quality, never where the
-  code came from.
+- **Threat model**: all instance files (public and held-out) are visible in
+  the repo and in the evaluation sandbox — a human who can read the repo could
+  always hand-craft a solver, which no benchmark can prevent. The protections
+  are deterrence-level: the constraints forbid reading the reference and
+  hardcoding by instance name, `validator.py` statically rejects such
+  attempts, and `CVRP_EVAL_GENERATE_SEED` makes the scored instance set
+  unpredictable at evaluation time. The unified runtime (process and docker
+  isolation) exposes the host repo to the candidate process (framework-level
+  behavior shared by all tasks). Scoring only measures solution quality, never
+  where the code came from.
 
 ## Experiments
 
