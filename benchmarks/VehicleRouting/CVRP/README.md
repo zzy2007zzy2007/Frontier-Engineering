@@ -137,8 +137,8 @@ and 95.65).
   public instance file. Same seed ⇒ same instances ⇒ reproducible. In the
   direct evaluator and the unified runtime in process mode, set the env var
   directly; in docker isolation mode, pass it via the unified runtime's env
-  map (the framework forwards `task.runtime.env` into the container, since
-  docker does not inherit the client environment):
+  map (requires the unified runtime fix that forwards `task.runtime.env` into
+  the container, since docker does not inherit the client environment):
   `+task.runtime.env.CVRP_EVAL_GENERATE_SEED=777 +task.runtime.env.CVRP_EVAL_GENERATE_COUNT=6`.
 - **Sandbox**: `copy_files.txt` copies only `baseline/`, `data/instances/`,
   `data/instances_heldout/` and `frontier_eval/` into the evaluation sandbox.
