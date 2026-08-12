@@ -68,7 +68,7 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 
 ## 参考分数（本机实测）
 
-当前评测集为 24 个实例（12 公开 + 12 held-out）。下面多数 agent 分数是在较早的 12 公开实例集上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.13、openevolve 98.00、AB-MCTS 98.49）证明学到的求解器能泛化到未见过的实例。运行记录见"实验记录"。
+当前评测集为 24 个实例（12 公开 + 12 held-out）。下面多数 agent 分数是在较早的 12 公开实例集上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.65、openevolve 98.00、AB-MCTS 99.26）证明学到的求解器能泛化到未见过的实例。运行记录与多运行统计见"实验记录"。
 
 | 求解器 | combined_score |
 |--------|----------------|
@@ -77,9 +77,9 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 | agent（openevolve，5 轮，best，12 实例集） | 96.38 |
 | agent（openevolve，5 轮，best，**24 实例集**） | **98.00** |
 | agent（ShinkaEvolve，5 代，best，12 实例集） | 99.31 |
-| agent（ShinkaEvolve，5 代，best，**24 实例集**） | **98.13** |
+| agent（ShinkaEvolve，5 代，best，**24 实例集**） | **98.65** |
 | agent（AB-MCTS，5 候选，best，12 实例集） | 98.70 |
-| agent（AB-MCTS，5 候选，best，**24 实例集**） | **98.49** |
+| agent（AB-MCTS，5 候选，best，**24 实例集**） | **99.26** |
 
 baseline 在 24 个实例上的分数分布（`python verification/evaluator.py baseline/solver.py`）：mean **54.69**、std 7.32、min 44.03（`VHO-51-7`）、max 71.55（`VRP-21-3`）。求解器是确定性的（固定种子 RNG），重复运行逐字节一致；上述离散度是跨实例的，而非跨 seed 的。
 
@@ -91,6 +91,16 @@ baseline 在 24 个实例上的分数分布（`python verification/evaluator.py 
 | 222  | 59.86 |
 | 333  | 56.09 |
 | **mean ± std** | **57.73 ± 1.58**（min 56.09，max 59.86） |
+
+**Agent 多运行统计**（每框架 3 次运行，24 实例集，`deepseek-v4-flash`；完整运行 ID 见"实验记录"）：
+
+| 框架 | 各次 combined_score | mean | std | min | max |
+|------|---------------------|------|-----|-----|-----|
+| openevolve（5 轮） | 98.00, 97.96, 97.47 | **97.81** | 0.24 | 97.47 | 98.00 |
+| ShinkaEvolve（5 代） | 98.13, 54.69\*, 98.65 | **83.82** | 20.60 | 54.69 | 98.65 |
+| AB-MCTS（5 候选） | 98.49, 96.78, 99.26 | **98.18** | 1.04 | 96.78 | 99.26 |
+
+\* 有一次 ShinkaEvolve 运行在每一代都生成了无效程序（各代计 0 分），其 best 停在 baseline 54.69——这是真实的失败模式，不是环境问题。
 
 agent 分数为随机进化运行的 "best found"；有多次运行的一并列出（如 openevolve 96.38 与 95.65，见"实验记录"）。
 
@@ -113,10 +123,16 @@ agent 分数为随机进化运行的 "best found"；有多次运行的一并列�
 | `runs/.../openevolve/deepseek-v4-flash/20260807_170244` | openevolve，5 轮 | 96.38 | 12 公开 |
 | `runs/.../openevolve/deepseek-v4-flash/20260807_195321` | openevolve，5 轮 | 95.65 | 12 公开 |
 | `runs/.../openevolve/deepseek-v4-flash/20260811_215703` | openevolve，5 轮 | 98.00 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../openevolve/deepseek-v4-flash/20260812_172944` | openevolve，5 轮 | 97.96 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../openevolve/deepseek-v4-flash/20260812_174122` | openevolve，5 轮 | 97.47 | 24 实例（12 公开 + 12 held-out） |
 | `runs/.../shinkaevolve/deepseek-v4-flash/20260807_195503` | ShinkaEvolve，5 代 | 99.31 | 12 公开 |
 | `runs/.../shinkaevolve/deepseek-v4-flash/20260811_192446` | ShinkaEvolve，5 代 | 98.13 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../shinkaevolve/deepseek-v4-flash/20260812_175208` | ShinkaEvolve，5 代 | 54.69\* | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../shinkaevolve/deepseek-v4-flash/20260812_175816` | ShinkaEvolve，5 代 | 98.65 | 24 实例（12 公开 + 12 held-out） |
 | `runs/.../abmcts/deepseek-v4-flash/20260807_190515` | AB-MCTS，5 候选 | 98.70 | 12 公开 |
 | `runs/.../abmcts/deepseek-v4-flash/20260812_102741` | AB-MCTS，5 候选 | 98.49 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../abmcts/deepseek-v4-flash/20260812_181308` | AB-MCTS，5 候选 | 96.78 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../abmcts/deepseek-v4-flash/20260812_182222` | AB-MCTS，5 候选 | 99.26 | 24 实例（12 公开 + 12 held-out） |
 
 baseline 复现：
 
