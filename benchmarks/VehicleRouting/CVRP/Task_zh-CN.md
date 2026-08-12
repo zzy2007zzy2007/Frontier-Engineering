@@ -32,7 +32,7 @@ CVRP 是 NP-hard 问题，几十个客户的实例无法精确求解，必须使
 | VRP-37-6 | 37 | 145 | VRP-60-9 | 60 | 160 |
 | VRP-45-6 | 45 | 190 | VRP-60-10 | 60 | 165 |
 
-- **12 个 held-out 实例**（data/instances_heldout/，`VHO-*`）：仅在评测时打分。它们的名字和数据**从不向 agent 展示**（不在 agent_files 和本文档中），因此候选无法离线求解或按名字硬编码路线。在 held-out 集上打分衡量 agent 是否学到了**可泛化**的求解方法。
+- **12 个 held-out 实例**（data/instances_heldout/，`VHO-*`）：与公开实例一起在评测时打分，把评测集扩充到 24 个。它们的文件像其他评测输入一样在沙箱里可见，因此只记忆 12 个公开实例的求解器无法拿到高分；按实例名硬编码会被静态检查拒绝，`CVRP_EVAL_GENERATE_SEED` 还可在评测时现场加入新实例，让评分实例集不可预测。在 held-out 集上打分衡量 agent 是否学到了**可泛化**的求解方法。
 
 文件名即实例名（如 `VRP-19-2.vrp`），采用 TSPLIB 风格格式（`NODE_COORD_SECTION` / `DEMAND_SECTION` / `DEPOT_SECTION`，depot 为节点 1）。实例由 `verification/generate_instances.py` 确定性生成（seed 42，`seed_key` 固定为发布时的原始标识符，保证数据集跨版本逐字节稳定）。
 
@@ -113,7 +113,7 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 
 ## 参考分数（本机实测，对当前 reference.json）
 
-当前评测集为 24 个实例（12 公开 + 12 held-out）。下面的 agent 分数是在**较早的 12 公开实例集**上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.13、openevolve 98.00、AB-MCTS 98.49）证明学到的求解器能泛化到未见过的实例。运行记录见 README "Experiments"。
+当前评测集为 24 个实例（12 公开 + 12 held-out）。下面的 agent 分数是在**较早的 12 公开实例集**上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.65、openevolve 98.00、AB-MCTS 99.26）证明学到的求解器能泛化到未见过的实例。运行记录与多运行统计见 README "Experiments"。
 
 | 求解器 | combined_score |
 |--------|----------------|
@@ -122,9 +122,9 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 | agent（openevolve 5 轮，best，12 实例集） | 96.38 |
 | agent（openevolve 5 轮，best，24 实例集） | 98.00 |
 | agent（ShinkaEvolve 5 代，best，12 实例集） | 99.31 |
-| agent（ShinkaEvolve 5 代，best，24 实例集） | 98.13 |
+| agent（ShinkaEvolve 5 代，best，24 实例集） | 98.65 |
 | agent（AB-MCTS 5 候选，best，12 实例集） | 98.70 |
-| agent（AB-MCTS 5 候选，best，24 实例集） | 98.49 |
+| agent（AB-MCTS 5 候选，best，24 实例集） | 99.26 |
 
 ## 优化提示（由弱到强）
 

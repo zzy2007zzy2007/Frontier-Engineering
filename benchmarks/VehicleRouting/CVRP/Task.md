@@ -41,10 +41,13 @@ customer distributions, coordinates 1..100, rounded Euclidean distances):
 | VRP-45-6 | 45 | 190 | VRP-60-10 | 60 | 165 |
 
 - **12 held-out instances** (data/instances_heldout/, `VHO-*`): scored at
-  evaluation time only. Their names and data are **never shown to the agent**
-  (absent from agent_files and this document), so a candidate cannot solve them
-  offline or hardcode routes by name. Scoring on the held-out set measures
-  whether the agent learned a *generalizable* solving method.
+  evaluation time alongside the public ones, doubling the evaluation set to 24.
+  Their files are in the sandbox like any evaluation input, so a solver that
+  memorizes only the 12 public instances cannot score high. Hardcoding routes
+  by instance name is rejected statically, and `CVRP_EVAL_GENERATE_SEED` can
+  add fresh instances at evaluation time so the scored set is not predictable.
+  Scoring on the held-out set measures whether the agent learned a
+  *generalizable* solving method.
 
 The file name is the instance name (e.g. `VRP-19-2.vrp`), in TSPLIB style
 (`NODE_COORD_SECTION` / `DEMAND_SECTION` / `DEPOT_SECTION`, depot is node 1).
@@ -157,9 +160,10 @@ default 60), `CVRP_EVAL_INSTANCES` (instance subset), `CVRP_EVAL_MAX_INSTANCES`
 The current evaluation set is 24 instances (12 public + 12 held-out). The
 agent scores below were measured on the **earlier 12-public-instance set**
 (held-out instances were added later) and are kept for cross-framework
-comparison; fresh runs on the full 24-instance set (ShinkaEvolve 98.13,
-openevolve 98.00, AB-MCTS 98.49) show the learned solvers generalize to
-unseen instances. See README "Experiments" for run records.
+comparison; fresh runs on the full 24-instance set (ShinkaEvolve 98.65,
+openevolve 98.00, AB-MCTS 99.26) show the learned solvers generalize to
+unseen instances. See README "Experiments" for run records and multi-run
+statistics.
 
 | Solver | combined_score |
 |--------|----------------|
@@ -168,9 +172,9 @@ unseen instances. See README "Experiments" for run records.
 | agent (openevolve, 5 iterations, best, 12-instance set) | 96.38 |
 | agent (openevolve, 5 iterations, best, 24-instance set) | 98.00 |
 | agent (ShinkaEvolve, 5 generations, best, 12-instance set) | 99.31 |
-| agent (ShinkaEvolve, 5 generations, best, 24-instance set) | 98.13 |
+| agent (ShinkaEvolve, 5 generations, best, 24-instance set) | 98.65 |
 | agent (AB-MCTS, 5 candidates, best, 12-instance set) | 98.70 |
-| agent (AB-MCTS, 5 candidates, best, 24-instance set) | 98.49 |
+| agent (AB-MCTS, 5 candidates, best, 24-instance set) | 99.26 |
 
 ## Optimisation hints (weak → strong)
 

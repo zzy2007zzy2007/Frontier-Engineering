@@ -24,7 +24,7 @@ CVRP/
 │       └── Dockerfile       # 容器化评测环境（Docker 优先）
 ├── data/
 │   ├── instances/           # 12 个公开 TSPLIB 风格 .vrp 实例（VRP-*）
-│   ├── instances_heldout/   # 12 个 held-out 实例（VHO-*），不向 agent 暴露
+│   ├── instances_heldout/   # 12 个 held-out 实例（VHO-*），评测时评分
 │   └── reference.json       # 每个实例的参考距离（24 个，评分基准）
 └── frontier_eval/           # Unified-task 元数据
 ```

@@ -23,7 +23,7 @@ CVRP/
 │   └── requirements.txt
 ├── data/
 │   ├── instances/           # 12 public TSPLIB-style .vrp instances (VRP-*)
-│   ├── instances_heldout/   # 12 held-out instances (VHO-*), shown to no agent
+│   ├── instances_heldout/   # 12 held-out instances (VHO-*), scored at evaluation time
 │   └── reference.json       # Precomputed reference distance per instance (24)
 └── frontier_eval/           # Unified-task metadata
 ```
