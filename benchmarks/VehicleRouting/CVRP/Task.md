@@ -42,12 +42,13 @@ customer distributions, coordinates 1..100, rounded Euclidean distances):
 
 - **12 held-out instances** (data/instances_heldout/, `VHO-*`): scored at
   evaluation time alongside the public ones, doubling the evaluation set to 24.
-  Their files are in the sandbox like any evaluation input, so a solver that
-  memorizes only the 12 public instances cannot score high. Hardcoding routes
-  by instance name is rejected statically, and `CVRP_EVAL_GENERATE_SEED` can
-  add fresh instances at evaluation time so the scored set is not predictable.
-  Scoring on the held-out set measures whether the agent learned a
-  *generalizable* solving method.
+  Their files stay on the host and are **not** copied into the evaluation
+  sandbox, so you cannot read them during development — each path is handed to
+  your solver only at scoring time. Hardcoding routes by instance name is
+  rejected statically, and `CVRP_EVAL_GENERATE_SEED` can add fresh instances at
+  evaluation time so the scored set is not predictable. Scoring on the
+  held-out set measures whether the agent learned a *generalizable* solving
+  method.
 
 The file name is the instance name (e.g. `VRP-19-2.vrp`), in TSPLIB style
 (`NODE_COORD_SECTION` / `DEMAND_SECTION` / `DEPOT_SECTION`, depot is node 1).

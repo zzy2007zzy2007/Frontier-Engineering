@@ -231,6 +231,33 @@ class TestGenerateMode(unittest.TestCase):
         self.assertFalse(any(n.startswith("GEN-") for n in m["per_instance"]))
 
 
+class TestHeldoutFromHost(unittest.TestCase):
+    """Held-out instances are read from the host source dir, not the sandbox copy."""
+
+    def test_heldout_read_from_host_source(self):
+        import os
+        import shutil
+        import tempfile
+
+        host = Path(tempfile.mkdtemp(prefix="cvrp_host_"))
+        heldout_dir = host / "data" / "instances_heldout"
+        heldout_dir.mkdir(parents=True)
+        src_vho = CVRP_ROOT / "data" / "instances_heldout" / "VHO-22-3.vrp"
+        shutil.copy2(src_vho, heldout_dir / "VHO-22-3.vrp")
+        os.environ["FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR"] = str(host)
+        os.environ["CVRP_EVAL_INSTANCES"] = "VRP-19-2 VHO-22-3"
+        try:
+            m = ev.evaluate(str(CVRP_ROOT / "baseline" / "solver.py"))["metrics"]
+        finally:
+            os.environ.pop("FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR", None)
+            os.environ.pop("CVRP_EVAL_INSTANCES", None)
+            shutil.rmtree(host, ignore_errors=True)
+        self.assertEqual(m["valid"], 1.0)
+        self.assertEqual(m["instances"], 2.0)
+        self.assertIn("VRP-19-2", m["per_instance"])
+        self.assertIn("VHO-22-3", m["per_instance"])
+
+
 class TestSplitEvolveBlocks(unittest.TestCase):
     def test_split(self):
         src = "a\n# EVOLVE-BLOCK-START\nb\n# EVOLVE-BLOCK-END\nc\n"

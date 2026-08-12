@@ -32,7 +32,7 @@ CVRP 是 NP-hard 问题，几十个客户的实例无法精确求解，必须使
 | VRP-37-6 | 37 | 145 | VRP-60-9 | 60 | 160 |
 | VRP-45-6 | 45 | 190 | VRP-60-10 | 60 | 165 |
 
-- **12 个 held-out 实例**（data/instances_heldout/，`VHO-*`）：与公开实例一起在评测时打分，把评测集扩充到 24 个。它们的文件像其他评测输入一样在沙箱里可见，因此只记忆 12 个公开实例的求解器无法拿到高分；按实例名硬编码会被静态检查拒绝，`CVRP_EVAL_GENERATE_SEED` 还可在评测时现场加入新实例，让评分实例集不可预测。在 held-out 集上打分衡量 agent 是否学到了**可泛化**的求解方法。
+- **12 个 held-out 实例**（data/instances_heldout/，`VHO-*`）：与公开实例一起在评测时打分，把评测集扩充到 24 个。它们的文件**留在宿主、不复制进评测沙箱**，开发阶段你读不到它们——评分时才把每个路径交给你的求解器。按实例名硬编码会被静态检查拒绝，`CVRP_EVAL_GENERATE_SEED` 还可在评测时现场加入新实例，让评分实例集不可预测。在 held-out 集上打分衡量 agent 是否学到了**可泛化**的求解方法。
 
 文件名即实例名（如 `VRP-19-2.vrp`），采用 TSPLIB 风格格式（`NODE_COORD_SECTION` / `DEMAND_SECTION` / `DEPOT_SECTION`，depot 为节点 1）。实例由 `verification/generate_instances.py` 确定性生成（seed 42，`seed_key` 固定为发布时的原始标识符，保证数据集跨版本逐字节稳定）。
 

@@ -106,9 +106,9 @@ agent 分数为随机进化运行的 "best found"；有多次运行的一并列�
 
 ## 评测完整性
 
-- **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，把评测集扩充到 24 个并与公开实例一起评分。实例文件在仓库和评测沙箱里都可见（它们是评分输入的一部分，`Task.md` 也会告知 agent 其存在），因此只记忆 12 个公开实例的求解器无法拿到高分；`validator.py` 还会静态拒绝按实例名硬编码，`CVRP_EVAL_GENERATE_SEED` 则让评分时的实例集不可预测。
+- **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，把评测集扩充到 24 个并与公开实例一起评分。它们的文件**留在宿主、不复制进评测沙箱**：评测器从宿主（`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`）读取，评分时才把每个路径交给候选，因此候选在演化过程中读不到它们；`validator.py` 还会静态拒绝按实例名硬编码，`CVRP_EVAL_GENERATE_SEED` 则让评分时的实例集不可预测。
 - **评测时生成实例**：设置 `CVRP_EVAL_GENERATE_SEED`（可选 `CVRP_EVAL_GENERATE_COUNT`，默认 6），评测器会在评分时用该种子**现场生成全新实例**参与评分，每个生成实例的参考距离由参考求解器当场计算——这样即使候选见过所有公开实例文件，也无法背答案。同一种子 ⇒ 同一批实例 ⇒ 完全可复现。直跑评测器与 unified 运行时（process 模式）均支持；docker 隔离模式（Linux/WSL）下评分可用（靠 `eval_command.txt` 的 `{repo_root}` 注入），但运行时生成不可用——unified 运行时不会把种子环境变量传入容器（框架级限制）。
-- **沙箱隔离**：`copy_files.txt` 只把 `baseline/`、`data/instances/`、`data/instances_heldout/`、`frontier_eval/` 复制进评测沙箱。`frontier_eval/evaluator.py` 是自包含的（解析、校验、评分与完整性检查全部内嵌），因此**任何 `verification/` 文件（包括参考求解器）都不复制**。`reference.json` 从不复制；评测器通过 `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR` 从宿主读取参考距离，候选子进程运行时不含该环境变量。
+- **沙箱隔离**：`copy_files.txt` 只把 `baseline/`、`data/instances/`、`frontier_eval/` 复制进评测沙箱（held-out 实例与 `reference.json` 从宿主读取、从不复制）。`frontier_eval/evaluator.py` 是自包含的（解析、校验、评分与完整性检查全部内嵌），因此**任何 `verification/` 文件（包括参考求解器）都不复制**。`reference.json` 从不复制；评测器通过 `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR` 从宿主读取参考距离，候选子进程运行时不含该环境变量。
 - **Preflight 检查**（`verification/validator.py`）：评测器会静态拒绝修改 EVOLVE-BLOCK 区外代码、引用 `verification` / `ref_solver` / `reference.json`、含绝对路径、或按实例名硬编码路线的候选；另有**确定性探针**——在最小 / 中等 / 最大 3 个代表实例上把候选各跑两次，输出不一致（非确定性）即判无效。
 - **威胁模型**：所有实例文件（公开与 held-out）在仓库和评测沙箱里都可见——能读到仓库的人总能手写一个求解器，任何 benchmark 都无法阻止这一点。防护是威慑级的：constraints 禁止读取参考与按实例名硬编码，`validator.py` 静态拒绝此类尝试，`CVRP_EVAL_GENERATE_SEED` 让评分时的实例集不可预测。unified 运行时（process 与 docker 隔离）会把宿主仓库暴露给候选进程（这是所有任务共享的框架级行为）。评分只衡量解的质量，从不看代码来源。
 

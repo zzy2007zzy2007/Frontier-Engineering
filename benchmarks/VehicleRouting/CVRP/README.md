@@ -148,12 +148,13 @@ and 95.65).
 
 - **Held-out instances**: 12 `VHO-*` instances in `data/instances_heldout/`
   double the evaluation set to 24 and are scored alongside the public ones.
-  The instance files are in the repo and in the evaluation sandbox (they are
-  part of the scoring input, and `Task.md` tells the agent they exist), so a
-  solver that memorizes only the 12 public instances cannot score high.
-  Per-instance name-keyed hardcoding is additionally rejected statically by
-  `validator.py`, and `CVRP_EVAL_GENERATE_SEED` adds fresh instances at
-  evaluation time so the scored set is not predictable.
+  Their files stay on the host and are **not** copied into the evaluation
+  sandbox: the evaluator reads them from the host
+  (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`) and passes each path to the
+  candidate only at scoring time, so a candidate cannot read them during
+  evolution. Per-instance name-keyed hardcoding is additionally rejected
+  statically by `validator.py`, and `CVRP_EVAL_GENERATE_SEED` adds fresh
+  instances at evaluation time so the scored set is not predictable.
 - **Runtime-generated instances**: set `CVRP_EVAL_GENERATE_SEED` (and
   optionally `CVRP_EVAL_GENERATE_COUNT`, default 6) to additionally generate
   fresh instances at evaluation time from that seed. Each generated instance
@@ -165,8 +166,9 @@ and 95.65).
   injection in `eval_command.txt`, but runtime-generated instances are not
   available there because the unified runtime does not forward the seed env
   var into the container (framework-level limitation).
-- **Sandbox**: `copy_files.txt` copies only `baseline/`, `data/instances/`,
-  `data/instances_heldout/` and `frontier_eval/` into the evaluation sandbox.
+- **Sandbox**: `copy_files.txt` copies only `baseline/`, `data/instances/` and
+  `frontier_eval/` into the evaluation sandbox (held-out instances and
+  `reference.json` are read from the host, never copied).
   `frontier_eval/evaluator.py` is self-contained (parsing, validation,
   scoring and integrity checks are embedded), so no `verification/` files —
   including the reference solver — are copied. `reference.json` is never

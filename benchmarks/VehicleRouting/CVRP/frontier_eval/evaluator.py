@@ -303,9 +303,15 @@ def _parse_env_str(name: str) -> str | None:
 
 
 def _all_instance_paths() -> list[Path]:
+    """Public instances come from the sandbox copy; held-out instances stay on
+    the host (never copied into the sandbox), so a candidate cannot read them
+    during evolution. They are still scored: the candidate receives their path
+    at scoring time (host path in process mode, repo-mount path in docker)."""
     paths = sorted(INSTANCES_DIR.glob("*.vrp"))
-    if HELDOUT_DIR.is_dir():
-        paths += sorted(HELDOUT_DIR.glob("*.vrp"))
+    src = _source_benchmark_dir()
+    heldout_dir = (src / "data" / "instances_heldout") if src is not None else HELDOUT_DIR
+    if heldout_dir.is_dir():
+        paths += sorted(heldout_dir.glob("*.vrp"))
     return paths
 
 
