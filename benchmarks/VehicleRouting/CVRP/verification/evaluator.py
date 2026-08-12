@@ -1,13 +1,26 @@
 """CVRP verification evaluator.
 
-Runs a candidate solver program on a fixed set of CVRP instances, validates
-the produced routes (full coverage, no duplicates, capacity respected) and
-scores each instance relative to the precomputed reference distance:
+Runs a candidate solver program on a fixed set of CVRP instances (public +
+held-out), validates the produced routes (full coverage, no duplicates,
+capacity respected) and scores each instance relative to the precomputed
+reference distance:
 
     score = min(100, 100 * reference_distance / candidate_distance)
 
 An invalid/crashing/timing-out candidate scores 0 on that instance and marks
 the whole run invalid.
+
+Security / integrity:
+  * The candidate is checked before running: the EVOLVE-BLOCK markers must be
+    present, code outside the markers must match the initial baseline, and the
+    source must not reference the verification module, the reference solver,
+    reference.json, absolute filesystem paths, or hardcode per-instance routes.
+  * The candidate subprocess runs with an environment stripped of
+    FRONTIER_EVAL_UNIFIED_* variables and any reference-distance settings, so
+    it cannot learn where the scoring baseline lives.
+  * reference.json is read from the host benchmark directory (via
+    FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR when running inside the unified
+    sandbox) and is NOT copied into the sandbox.
 
 Usage (inside the CVRP task directory):
     python verification/evaluator.py baseline/solver.py
@@ -17,6 +30,8 @@ Environment overrides:
     CVRP_EVAL_TIMEOUT_S      per-instance subprocess timeout (default 60)
     CVRP_EVAL_INSTANCES      space/comma separated subset of instance names
     CVRP_EVAL_MAX_INSTANCES  cap on number of instances
+    CVRP_EVAL_SCORE_SCALE    score knob (default 1.0)
+    CVRP_EVAL_REFERENCE_JSON override path to reference.json (testing only)
 """
 from __future__ import annotations
 
@@ -35,7 +50,23 @@ from typing import Any
 
 TASK_ROOT = Path(__file__).resolve().parents[1]  # <repo>/benchmarks/VehicleRouting/CVRP
 INSTANCES_DIR = TASK_ROOT / "data" / "instances"
+HELDOUT_DIR = TASK_ROOT / "data" / "instances_heldout"
 REFERENCE_JSON = TASK_ROOT / "data" / "reference.json"
+BASELINE_PATH = TASK_ROOT / "baseline" / "solver.py"
+
+# Candidate integrity checks live in validator.py (shared with tests).
+from validator import (  # noqa: E402
+    EVOLVE_START,
+    EVOLVE_END,
+    candidate_env,
+    check_candidate,
+    check_determinism,
+    select_determinism_probes,
+    split_evolve_blocks,
+)
+
+# Backward-compatible alias used by the unit tests.
+_split_evolve_blocks = split_evolve_blocks
 
 DEFAULT_TIMEOUT_S = 60
 
@@ -143,6 +174,7 @@ def run_candidate(
             text=True,
             timeout=timeout,
             cwd=str(solver_path.parent),
+            env=candidate_env(),
         )
     except subprocess.TimeoutExpired:
         return False, "timeout"
@@ -153,16 +185,47 @@ def run_candidate(
     return True, ""
 
 
+def _source_benchmark_dir() -> Path | None:
+    """Host benchmark dir exposed by the unified sandbox (if running there)."""
+    raw = os.environ.get("FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR", "").strip()
+    if raw:
+        path = Path(raw)
+        if path.is_dir():
+            return path
+    return None
+
+
 def load_reference() -> dict[str, float]:
-    if REFERENCE_JSON.is_file():
-        raw = json.loads(REFERENCE_JSON.read_text(encoding="utf-8"))
-        return {k: float(v) for k, v in raw.items()}
+    """Reference distances, preferring the host copy over the sandbox copy."""
+    candidates: list[Path] = []
+    src = _source_benchmark_dir()
+    if src is not None:
+        candidates.append(src / "data" / "reference.json")
+    env_path = os.environ.get("CVRP_EVAL_REFERENCE_JSON", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.append(REFERENCE_JSON)
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return {k: float(v) for k, v in raw.items()}
+        except Exception:
+            continue
     return {}
 
 
 def _parse_env_str(name: str) -> str | None:
     raw = __import__("os").environ.get(name, "").strip()
     return raw or None
+
+
+def _all_instance_paths() -> list[Path]:
+    paths = sorted(INSTANCES_DIR.glob("*.vrp"))
+    if HELDOUT_DIR.is_dir():
+        paths += sorted(HELDOUT_DIR.glob("*.vrp"))
+    return paths
 
 
 def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, Any]:
@@ -174,7 +237,7 @@ def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, A
     inst_names = _parse_env_str("CVRP_EVAL_INSTANCES")
     max_instances = _parse_env_str("CVRP_EVAL_MAX_INSTANCES")
 
-    inst_paths = sorted(INSTANCES_DIR.glob("*.vrp"))
+    inst_paths = _all_instance_paths()
     if inst_names:
         picked = [p for n in inst_names.replace(",", " ").split() for p in inst_paths if p.stem == n]
         if picked:
@@ -186,11 +249,35 @@ def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, A
     python = sys.executable
     tmp_dir = Path(tempfile.mkdtemp(prefix="cvrp_eval_"))
 
+    # Static integrity checks + determinism (probe small / medium / large
+    # instances; each probe runs the candidate twice).
+    src_dir = _source_benchmark_dir()
+    baseline_path = (
+        (src_dir / "baseline" / "solver.py") if src_dir is not None else BASELINE_PATH
+    )
+    preflight = check_candidate(solver_path, baseline_path=baseline_path)
+    if not preflight and inst_paths:
+        for probe in select_determinism_probes(inst_paths, parse_instance):
+            det_ok, det_note = check_determinism(
+                python, solver_path, probe, timeout
+            )
+            if not det_ok:
+                preflight = [
+                    f"determinism check failed on {probe.stem}: {det_note}"
+                ]
+                break
+
     rows = []
     for inst_path in inst_paths:
         inst = parse_instance(inst_path)
         out_path = tmp_dir / f"{inst['name']}.out.json"
-        ok, err = run_candidate(python, solver_path, inst_path, out_path, timeout)
+        ok = True
+        err = ""
+        if preflight:
+            ok = False
+            err = "preflight: " + "; ".join(preflight)
+        else:
+            ok, err = run_candidate(python, solver_path, inst_path, out_path, timeout)
         score = 0.0
         cand_dist = None
         valid = False
@@ -240,7 +327,9 @@ def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, A
     artifacts = {
         "candidate_path": str(solver_path),
         "timeout_s": timeout,
-        "reference": reference,
+        # NOTE: reference distances are deliberately NOT included here to avoid
+        # leaking the scoring baseline to the agent.
+        "reference_instance_count": float(len(reference)),
     }
     return {"metrics": metrics, "artifacts": artifacts}
 

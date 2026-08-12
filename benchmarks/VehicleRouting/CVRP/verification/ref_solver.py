@@ -26,6 +26,7 @@ from collections import deque
 from pathlib import Path
 
 INST_DIR = Path(__file__).resolve().parents[1] / "data" / "instances"
+HELDOUT_DIR = Path(__file__).resolve().parents[1] / "data" / "instances_heldout"
 OUT_JSON = Path(__file__).resolve().parents[1] / "data" / "reference.json"
 
 
@@ -455,18 +456,24 @@ def main(argv: list[str] | None = None) -> int:
     # kept. The seed list is a constant so regeneration is byte-identical.
     seeds = (123, 2024, 7)
     results = {}
-    for path in sorted(INST_DIR.glob("*.vrp")):
-        inst = parse_instance(path)
-        iters = args.iterations if args.iterations else max(100, 4 * inst["n"])
-        best_total = min(
-            sum(
-                route_dist(r, inst["distance"])
-                for r in grasp_solve(inst, starts=args.starts, seed=seed, lns_iters=iters)
+
+    def _solve_dir(inst_dir: Path) -> None:
+        for path in sorted(inst_dir.glob("*.vrp")):
+            inst = parse_instance(path)
+            iters = args.iterations if args.iterations else max(100, 4 * inst["n"])
+            best_total = min(
+                sum(
+                    route_dist(r, inst["distance"])
+                    for r in grasp_solve(inst, starts=args.starts, seed=seed, lns_iters=iters)
+                )
+                for seed in seeds
             )
-            for seed in seeds
-        )
-        results[inst["name"]] = best_total
-        print(f"{inst['name']}: ref_dist={best_total} (iters={iters}, seeds={seeds})")
+            results[inst["name"]] = best_total
+            print(f"{inst['name']}: ref_dist={best_total} (iters={iters}, seeds={seeds})")
+
+    _solve_dir(INST_DIR)
+    if HELDOUT_DIR.is_dir():
+        _solve_dir(HELDOUT_DIR)
     OUT_JSON.write_text(
         json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

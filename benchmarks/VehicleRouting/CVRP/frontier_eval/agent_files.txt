@@ -1,5 +1,4 @@
 README.md
 Task.md
 baseline/solver.py
-data/instances/VRP-19-2.vrp
 frontier_eval/constraints.txt

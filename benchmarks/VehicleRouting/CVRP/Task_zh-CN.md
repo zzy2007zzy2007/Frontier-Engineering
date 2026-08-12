@@ -17,9 +17,11 @@
 
 CVRP 是 NP-hard 问题，几十个客户的实例无法精确求解，必须使用启发式方法（最近邻、savings、2-opt、大邻域搜索、元启发式等）。
 
-## 实例（data/instances/）
+## 实例（data/instances/、data/instances_heldout/）
 
-本任务提供 12 个确定性生成的聚簇分布实例（模拟城市客户分布，坐标 1..100，距离四舍五入取整）：
+本任务提供 24 个确定性生成的聚簇分布实例（模拟城市客户分布，坐标 1..100，距离四舍五入取整）：
+
+- **12 个公开实例**（data/instances/，`VRP-*`）：
 
 | 实例 | 客户数 | 容量 | 实例 | 客户数 | 容量 |
 |------|--------|------|------|--------|------|
@@ -29,6 +31,8 @@ CVRP 是 NP-hard 问题，几十个客户的实例无法精确求解，必须使
 | VRP-32-5 | 32 | 160 | VRP-55-8 | 55 | 185 |
 | VRP-37-6 | 37 | 145 | VRP-60-9 | 60 | 160 |
 | VRP-45-6 | 45 | 190 | VRP-60-10 | 60 | 165 |
+
+- **12 个 held-out 实例**（data/instances_heldout/，`VHO-*`）：仅在评测时打分。它们的名字和数据**从不向 agent 展示**（不在 agent_files 和本文档中），因此候选无法离线求解或按名字硬编码路线。在 held-out 集上打分衡量 agent 是否学到了**可泛化**的求解方法。
 
 文件名即实例名（如 `VRP-19-2.vrp`），采用 TSPLIB 风格格式（`NODE_COORD_SECTION` / `DEMAND_SECTION` / `DEPOT_SECTION`，depot 为节点 1）。实例由 `verification/generate_instances.py` 确定性生成（seed 42，`seed_key` 固定为发布时的原始标识符，保证数据集跨版本逐字节稳定）。
 
@@ -62,11 +66,21 @@ def solve(instance):
 
 任一不满足 → 该实例判 invalid，得 0 分，且整个候选 `valid=0`。
 
+### 候选完整性检查（preflight）
+
+运行前，评测器会**静态拒绝**有以下行为的候选：
+- 删除或重排 `EVOLVE-BLOCK-START` / `EVOLVE-BLOCK-END` 标记，或修改 evolve 区外、与初始 baseline 不一致的代码；
+- 引用 verification 模块、参考求解器或 `reference.json`（如 `import verification.ref_solver`）；
+- 含绝对文件系统路径；
+- 按实例名硬编码路线（如 `"VRP-19-2": [...]`）。
+
+违规候选得 0 分并判无效。候选子进程运行在剥离宿主路径的环境中，无法定位宿主上的 `reference.json`；评测沙箱只包含候选需要的文件（实例 + 评测胶水），**从不包含参考求解器或 `reference.json`**。
+
 ## 评分
 
 ```
 score_instance = min(100, 100 × reference_distance / candidate_distance)
-combined_score = mean(score_instance)     # 跨 12 个实例平均
+combined_score = mean(score_instance)     # 跨 24 个实例平均（12 公开 + 12 held-out）
 valid          = 全部实例合法？1 : 0
 ```
 
@@ -84,23 +98,33 @@ python verification/evaluator.py baseline/solver.py
 # 只评测部分实例
 python verification/evaluator.py baseline/solver.py --instances VRP-19-2 VRP-32-5
 
-# 框架适配验证（在仓库根目录）
+# 运行单元测试（评测器 / 验证器 / 候选检查）
+python verification/test_evaluator.py
+
+# 框架适配验证（仓库根目录，process 模式）
 python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0
+
+# 框架适配验证（仓库根目录，docker 隔离；需先构建镜像：
+# docker build -t cvrp-benchmark -f verification/docker/Dockerfile .）
+python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0 task.runtime.isolation_mode=docker task.runtime.docker_image=cvrp-benchmark
 ```
 
 环境变量：`CVRP_EVAL_TIMEOUT_S`（每实例子进程超时，默认 60）、`CVRP_EVAL_INSTANCES`（实例子集）、`CVRP_EVAL_MAX_INSTANCES`（实例数上限）、`CVRP_EVAL_SCORE_SCALE`（评分旋钮，默认 1.0）。
 
 ## 参考分数（本机实测，对当前 reference.json）
 
-agent 运行使用 `deepseek-v4-flash` 模型，每个框架列出其测得的最优分（思考强度设置因框架而异）。
+当前评测集为 24 个实例（12 公开 + 12 held-out）。下面的 agent 分数是在**较早的 12 公开实例集**上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.13、openevolve 98.00、AB-MCTS 98.49）证明学到的求解器能泛化到未见过的实例。运行记录见 README "Experiments"。
 
 | 求解器 | combined_score |
 |--------|----------------|
-| baseline（随机顺序最近插入） | **55.59** |
+| baseline（随机顺序最近插入），24 实例 | **54.69** |
 | reference（确定性 GRASP + LNS，评分基准） | 100（近最优） |
-| agent（openevolve 5 轮，best） | 96.38 |
-| agent（ShinkaEvolve 5 代，best） | 99.31 |
-| agent（AB-MCTS 5 候选，best） | 98.70 |
+| agent（openevolve 5 轮，best，12 实例集） | 96.38 |
+| agent（openevolve 5 轮，best，24 实例集） | 98.00 |
+| agent（ShinkaEvolve 5 代，best，12 实例集） | 99.31 |
+| agent（ShinkaEvolve 5 代，best，24 实例集） | 98.13 |
+| agent（AB-MCTS 5 候选，best，12 实例集） | 98.70 |
+| agent（AB-MCTS 5 候选，best，24 实例集） | 98.49 |
 
 ## 优化提示（由弱到强）
 

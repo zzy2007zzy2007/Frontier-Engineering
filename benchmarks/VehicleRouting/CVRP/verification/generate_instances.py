@@ -14,6 +14,7 @@ from pathlib import Path
 
 SEED = 42
 OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "instances"
+HELDOUT_DIR = Path(__file__).resolve().parents[1] / "data" / "instances_heldout"
 
 # (name, num_customers, num_clusters, num_vehicles_approx, seed_key)
 # `seed_key` fixes the RNG stream per instance. The keys are the original
@@ -35,15 +36,48 @@ SPECS = [
     ("VRP-60-10", 60, 6, 10, "G-n60-k10"),
 ]
 
+# Held-out instances: used only at evaluation time, never shown to the agent
+# (they are absent from agent_files and Task.md), so a candidate cannot hardcode
+# routes by instance name. Names use a distinct VHO- prefix.
+HELDOUT_SPECS = [
+    ("VHO-22-3", 22, 3, 3),
+    ("VHO-24-3", 24, 3, 3),
+    ("VHO-27-4", 27, 3, 4),
+    ("VHO-29-4", 29, 4, 4),
+    ("VHO-33-5", 33, 4, 5),
+    ("VHO-36-5", 36, 4, 5),
+    ("VHO-39-6", 39, 5, 6),
+    ("VHO-43-6", 43, 5, 6),
+    ("VHO-47-7", 47, 5, 7),
+    ("VHO-51-7", 51, 6, 7),
+    ("VHO-55-8", 55, 6, 8),
+    ("VHO-58-9", 58, 6, 9),
+]
+
 
 def _round_dist(x1: float, y1: float, x2: float, y2: float) -> int:
     return int(round(math.hypot(x1 - x2, y1 - y2)))
 
 
 def generate_instance(
-    name: str, num_customers: int, num_clusters: int, vehicles: int, seed_key: str
+    name: str,
+    num_customers: int,
+    num_clusters: int,
+    vehicles: int,
+    seed_key: str | None = None,
+    seed: int | None = None,
 ) -> str:
-    rng = random.Random(f"{SEED}:{seed_key}")
+    """Generate one deterministic CVRP instance as TSPLIB text.
+
+    Exactly one of `seed_key` (legacy: fixed base seed + key, e.g. "G-n19-k2")
+    or `seed` (arbitrary integer) must be provided; `seed` lets callers derive
+    fresh instances at evaluation time without touching the released dataset.
+    """
+    if seed is not None:
+        rng = random.Random(seed)
+    else:
+        assert seed_key is not None, "provide either seed_key or seed"
+        rng = random.Random(f"{SEED}:{seed_key}")
     # Cluster centers spread over a 100x100 region.
     centers = [
         (rng.uniform(15, 85), rng.uniform(15, 85)) for _ in range(num_clusters)
@@ -92,6 +126,17 @@ def main() -> None:
         )
         print(
             f"wrote {name}.vrp  (customers={n}, "
+            f"capacity={text.split('CAPACITY: ')[1].split()[0]})"
+        )
+
+    HELDOUT_DIR.mkdir(parents=True, exist_ok=True)
+    for name, n, k, v in HELDOUT_SPECS:
+        text = generate_instance(name, n, k, v, seed_key=f"HO-{name}")
+        (HELDOUT_DIR / f"{name}.vrp").write_text(
+            text, encoding="ascii", newline="\n"
+        )
+        print(
+            f"wrote heldout {name}.vrp  (customers={n}, "
             f"capacity={text.split('CAPACITY: ')[1].split()[0]})"
         )
 

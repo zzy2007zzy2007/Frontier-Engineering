@@ -8,17 +8,24 @@
 CVRP/
 ├── Task.md                  # 任务说明（规则、输入输出契约、评分）
 ├── baseline/
-│   └── solver.py            # 候选求解器（随机顺序最近插入）+ EVOLVE-BLOCK
+│   ├── solver.py            # 候选求解器（随机顺序最近插入）+ EVOLVE-BLOCK
+│   └── result_log.txt       # baseline 评测日志
 ├── verification/
-│   ├── evaluator.py         # 运行器 + 验证器 + 评分器（仅标准库）
+│   ├── evaluator.py         # 运行器 + 验证器 + 评分器 + 候选完整性检查（仅标准库）
+│   ├── validator.py         # 候选完整性验证器（静态检查 + 确定性探针）
 │   ├── ref_solver.py        # 参考求解器：确定性 GRASP 多起点 + 2-opt + relocate/swap + 2-opt* + LNS
-│   ├── generate_instances.py# 确定性实例生成器（seed 42，逐字节稳定）
+│   ├── generate_instances.py# 确定性实例生成器（seed 42，逐字节稳定；公开 + held-out）
+│   ├── test_evaluator.py    # 单元测试：评测器（stdlib unittest）
+│   ├── test_validator.py    # 单元测试：验证器
+│   ├── test_ref_solver.py   # 单元测试：参考求解器
+│   ├── multiseed_stat.py    # baseline 多 seed 统计脚本
 │   ├── requirements.txt
 │   └── docker/
 │       └── Dockerfile       # 容器化评测环境（Docker 优先）
 ├── data/
-│   ├── instances/           # 12 个生成的 TSPLIB 风格 .vrp 实例
-│   └── reference.json       # 每个实例的参考距离（评分基准）
+│   ├── instances/           # 12 个公开 TSPLIB 风格 .vrp 实例（VRP-*）
+│   ├── instances_heldout/   # 12 个 held-out 实例（VHO-*），不向 agent 暴露
+│   └── reference.json       # 每个实例的参考距离（24 个，评分基准）
 └── frontier_eval/           # Unified-task 元数据
 ```
 
@@ -38,35 +45,96 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 
 ### Docker
 
+Dockerfile 为 unified 运行时的 `isolation_mode=docker` 提供评测环境（Python 标准库）。构建镜像并让 unified 运行时指向它：
+
 ```bash
 # 构建镜像（在 CVRP 目录下）
 docker build -t cvrp-benchmark -f verification/docker/Dockerfile .
 
-# 评测 baseline
-docker run --rm -it cvrp-benchmark
-
-# 评测候选（候选需挂载进容器，镜像内只有构建时的文件）
-docker run --rm -it -v "$(pwd)/candidate.py:/app/candidate.py" cvrp-benchmark candidate.py
+# 从仓库根目录使用（完整命令见"实验记录"）
+python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0 task.runtime.isolation_mode=docker task.runtime.docker_image=cvrp-benchmark
 ```
+
+镜像内**刻意不包含任何 benchmark 文件**（没有 `reference.json`、没有参考求解器）；unified 运行时会把沙箱挂载进容器。
 
 ## 评分
 
-`score = min(100, 100 × reference_distance / candidate_distance)`，跨 12 个实例取平均。
+`score = min(100, 100 × reference_distance / candidate_distance)`，跨 **24 个实例**（12 公开 + 12 held-out）取平均。
 参考距离由确定性的 `verification/ref_solver.py` 预计算，为近最优（与存档最优 agent 解、OR-Tools GLS 交叉验证一致）。
 非法解（客户缺失/重复、超容量、崩溃、超时）得 0 分，并使整个运行判无效（valid=0）。
 可选评分旋钮 `CVRP_EVAL_SCORE_SCALE`（默认 1.0）可收紧 100 分线：`score = min(100, scale × 100 × ref / cand)`。
 
 ## 参考分数（本机实测）
 
-agent 运行使用 `deepseek-v4-flash` 模型，每个框架列出其测得的最优分（思考强度设置因框架而异）。
+当前评测集为 24 个实例（12 公开 + 12 held-out）。下面多数 agent 分数是在较早的 12 公开实例集上测得的（held-out 实例为后加），保留用于跨框架对比；在完整 24 实例集上的新运行（ShinkaEvolve 98.13、openevolve 98.00、AB-MCTS 98.49）证明学到的求解器能泛化到未见过的实例。运行记录见"实验记录"。
 
 | 求解器 | combined_score |
 |--------|----------------|
-| baseline（随机顺序最近插入） | 55.59 |
+| baseline（随机顺序最近插入），24 实例 | **54.69** |
 | reference（确定性 GRASP + LNS，评分基准） | 100（近最优） |
-| agent（openevolve，5 轮，best） | 96.38 |
-| agent（ShinkaEvolve，5 代，best） | 99.31 |
-| agent（AB-MCTS，5 候选，best） | 98.70 |
+| agent（openevolve，5 轮，best，12 实例集） | 96.38 |
+| agent（openevolve，5 轮，best，**24 实例集**） | **98.00** |
+| agent（ShinkaEvolve，5 代，best，12 实例集） | 99.31 |
+| agent（ShinkaEvolve，5 代，best，**24 实例集**） | **98.13** |
+| agent（AB-MCTS，5 候选，best，12 实例集） | 98.70 |
+| agent（AB-MCTS，5 候选，best，**24 实例集**） | **98.49** |
+
+baseline 在 24 个实例上的分数分布（`python verification/evaluator.py baseline/solver.py`）：mean **54.69**、std 7.32、min 44.03（`VHO-51-7`）、max 71.55（`VRP-21-3`）。求解器是确定性的（固定种子 RNG），重复运行逐字节一致；上述离散度是跨实例的，而非跨 seed 的。
+
+**多 seed 统计**（评审要求的 "multi-run statistics"）：`verification/multiseed_stat.py` 从多个 seed 派生全新评测实例集并现场计算各集参考距离（`python verification/multiseed_stat.py --seeds 111 222 333`）：
+
+| Seed | combined_score |
+|------|----------------|
+| 111  | 57.24 |
+| 222  | 59.86 |
+| 333  | 56.09 |
+| **mean ± std** | **57.73 ± 1.58**（min 56.09，max 59.86） |
+
+agent 分数为随机进化运行的 "best found"；有多次运行的一并列出（如 openevolve 96.38 与 95.65，见"实验记录"）。
+
+## 评测完整性
+
+- **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，从不向 agent 暴露（不在 `agent_files.txt` 和 `Task.md` 中），因此按实例名硬编码无法泛化到它们；在 held-out 集上打分衡量 agent 是否学到了*可泛化*的求解方法。
+- **沙箱隔离**：`copy_files.txt` 只把 `baseline/`、`data/instances/`、`data/instances_heldout/`、`frontier_eval/` 复制进评测沙箱。`frontier_eval/evaluator.py` 是自包含的（解析、校验、评分与完整性检查全部内嵌），因此**任何 `verification/` 文件（包括参考求解器）都不复制**。`reference.json` 从不复制；评测器通过 `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR` 从宿主读取参考距离，候选子进程运行时不含该环境变量。
+- **Preflight 检查**（`verification/validator.py`）：评测器会静态拒绝修改 EVOLVE-BLOCK 区外代码、引用 `verification` / `ref_solver` / `reference.json`、含绝对路径、或按实例名硬编码路线的候选；另有**确定性探针**——在最小 / 中等 / 最大 3 个代表实例上把候选各跑两次，输出不一致（非确定性）即判无效。
+- **威胁模型**：held-out 实例只对 agent 的*上下文*隐藏（不在 `agent_files.txt` 和 `Task.md` 中），目的是防止 LLM 在生成代码时按实例名硬编码。实例文件本身在仓库里是公开的——能读到仓库的人总能手写一个求解器，任何 benchmark 都无法阻止这一点。unified 运行时（process 与 docker 隔离）会把宿主仓库暴露给候选进程（这是所有任务共享的框架级行为）；preflight 检查是针对 LLM 朴素尝试的威慑，不是针对恶意人类的沙箱。评分只衡量解的质量，从不看代码来源。
+
+## 实验记录
+
+所有 agent 运行均使用 `deepseek-v4-flash` 模型。分数为 "best found"；LLM 进化具有随机性，有多次运行的地方一并列出。
+
+| 运行 | 框架 | 分数 | 评测集 |
+|------|------|------|--------|
+| baseline（随机顺序最近插入） | — | 54.69 | 24 实例（12 公开 + 12 held-out） |
+| reference（GRASP + LNS，评分基准） | — | 100 | 24 实例 |
+| `runs/.../openevolve/deepseek-v4-flash/20260807_170244` | openevolve，5 轮 | 96.38 | 12 公开 |
+| `runs/.../openevolve/deepseek-v4-flash/20260807_195321` | openevolve，5 轮 | 95.65 | 12 公开 |
+| `runs/.../openevolve/deepseek-v4-flash/20260811_215703` | openevolve，5 轮 | 98.00 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../shinkaevolve/deepseek-v4-flash/20260807_195503` | ShinkaEvolve，5 代 | 99.31 | 12 公开 |
+| `runs/.../shinkaevolve/deepseek-v4-flash/20260811_192446` | ShinkaEvolve，5 代 | 98.13 | 24 实例（12 公开 + 12 held-out） |
+| `runs/.../abmcts/deepseek-v4-flash/20260807_190515` | AB-MCTS，5 候选 | 98.70 | 12 公开 |
+| `runs/.../abmcts/deepseek-v4-flash/20260812_102741` | AB-MCTS，5 候选 | 98.49 | 24 实例（12 公开 + 12 held-out） |
+
+baseline 复现：
+
+```bash
+# 在 CVRP 目录下
+python verification/evaluator.py baseline/solver.py     # -> 54.69, valid 1.0（24 实例）
+python verification/test_evaluator.py                   # -> 18 个单元测试全部通过
+python verification/test_validator.py                   # -> 15 个单元测试全部通过
+python verification/test_ref_solver.py                  # -> 5 个单元测试全部通过
+python verification/multiseed_stat.py --seeds 111 222 333  # -> 57.73 ± 1.58
+```
+
+框架适配验证（仓库根目录）：
+
+```bash
+# process 模式
+python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0
+
+# docker 隔离（先构建镜像：docker build -t cvrp-benchmark -f verification/docker/Dockerfile .）
+python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0 task.runtime.isolation_mode=docker task.runtime.docker_image=cvrp-benchmark
+```
 
 ## Unified-task 集成
 
