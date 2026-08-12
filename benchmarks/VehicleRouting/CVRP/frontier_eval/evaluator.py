@@ -203,6 +203,8 @@ def candidate_env() -> dict[str, str]:
         if upper.startswith("FRONTIER_EVAL_UNIFIED_") or key in (
             "CVRP_EVAL_REFERENCE_JSON",
             "CVRP_EVAL_REFERENCES",
+            "CVRP_EVAL_GENERATE_SEED",
+            "CVRP_EVAL_GENERATE_COUNT",
         ):
             del env[key]
     return env
@@ -307,6 +309,68 @@ def _all_instance_paths() -> list[Path]:
     return paths
 
 
+def _load_host_module(mod_name: str):
+    """Load a host `verification/<mod_name>.py` module (not present in the sandbox)."""
+    src = _source_benchmark_dir()
+    if src is None:
+        return None
+    path = src / "verification" / f"{mod_name}.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(mod_name, path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        return None
+    return mod
+
+
+def _reference_distance(inst: dict, ref_mod) -> float:
+    iters = max(100, 4 * inst["n"])
+    grasp_solve = ref_mod.grasp_solve
+    route_dist = ref_mod.route_dist
+    seeds = getattr(ref_mod, "REF_SEEDS", (123, 2024, 7))
+    return min(
+        sum(
+            route_dist(r, inst["distance"])
+            for r in grasp_solve(inst, starts=40, seed=s, lns_iters=iters)
+        )
+        for s in seeds
+    )
+
+
+def _generate_instances(base_seed: int, count: int, out_dir: Path) -> tuple[list[Path], dict[str, float]]:
+    """Fresh instances generated at evaluation time (anti-hardcoding).
+
+    The sandbox has no `verification/` code, so the deterministic generator and
+    reference solver are loaded from the host benchmark dir; the candidate's
+    environment is stripped of the host path (see candidate_env), so it cannot
+    reach them.
+    """
+    gen_mod = _load_host_module("generate_instances")
+    ref_mod = _load_host_module("ref_solver")
+    if gen_mod is None or ref_mod is None:
+        return [], {}
+    SPECS = gen_mod.SPECS
+    generate_instance = gen_mod.generate_instance
+    paths: list[Path] = []
+    refs: dict[str, float] = {}
+    spec_count = len(SPECS)
+    for i in range(count):
+        name, n, k, v, _seed_key = SPECS[i % spec_count]
+        fname = f"GEN-{base_seed}-{i + 1}"
+        text = generate_instance(fname, n, k, v, seed=base_seed * 1000 + i)
+        inst_path = out_dir / f"{fname}.vrp"
+        inst_path.write_text(text, encoding="ascii", newline="\n")
+        inst = parse_instance(inst_path)
+        refs[fname] = float(_reference_distance(inst, ref_mod))
+        paths.append(inst_path)
+    return paths, refs
+
+
 def _run_candidate(
     python: str, solver_path: Path, inst_path: Path, out_path: Path, timeout: float
 ) -> tuple[bool, str]:
@@ -353,6 +417,20 @@ def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, A
     reference = load_reference()
     python = sys.executable
     tmp_dir = Path(tempfile.mkdtemp(prefix="cvrp_eval_"))
+
+    # Anti-hardcoding: when a generation seed is provided, add fresh instances
+    # generated at evaluation time (the candidate cannot have memorized them).
+    gen_seed_raw = _parse_env_str("CVRP_EVAL_GENERATE_SEED")
+    if gen_seed_raw:
+        try:
+            gen_count = int(_parse_env_str("CVRP_EVAL_GENERATE_COUNT") or 6)
+            gen_count = max(0, gen_count)
+        except ValueError:
+            gen_count = 6
+        if gen_count > 0:
+            gen_paths, gen_refs = _generate_instances(int(gen_seed_raw), gen_count, tmp_dir)
+            inst_paths = list(inst_paths) + gen_paths
+            reference.update(gen_refs)
 
     # Preflight: static integrity + determinism probe on the smallest instance.
     try:

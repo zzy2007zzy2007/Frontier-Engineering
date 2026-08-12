@@ -176,6 +176,61 @@ class TestEvaluateBaseline(unittest.TestCase):
         self.assertEqual(artifacts["reference_instance_count"], 24.0)
 
 
+class TestGenerateMode(unittest.TestCase):
+    """Runtime instance generation (anti-hardcoding)."""
+
+    def _run(self, seed, count=None, instances=None):
+        import os
+
+        os.environ["CVRP_EVAL_GENERATE_SEED"] = str(seed)
+        if count is not None:
+            os.environ["CVRP_EVAL_GENERATE_COUNT"] = str(count)
+        if instances:
+            os.environ["CVRP_EVAL_INSTANCES"] = instances
+        try:
+            return ev.evaluate(str(CVRP_ROOT / "baseline" / "solver.py"))["metrics"]
+        finally:
+            os.environ.pop("CVRP_EVAL_GENERATE_SEED", None)
+            os.environ.pop("CVRP_EVAL_GENERATE_COUNT", None)
+            os.environ.pop("CVRP_EVAL_INSTANCES", None)
+
+    def test_generates_extra_instances(self):
+        # 2 fixed + 4 generated = 6 instances, all valid.
+        m = self._run(seed=42, count=4, instances="VRP-19-2 VHO-22-3")
+        self.assertEqual(m["valid"], 1.0)
+        self.assertEqual(m["instances"], 6.0)
+        names = set(m["per_instance"].keys())
+        self.assertIn("VRP-19-2", names)
+        self.assertIn("VHO-22-3", names)
+        self.assertTrue(any(n.startswith("GEN-42-") for n in names))
+
+    def test_same_seed_deterministic(self):
+        a = self._run(seed=42, count=3)
+        b = self._run(seed=42, count=3)
+        self.assertEqual(a["combined_score"], b["combined_score"])
+        self.assertEqual(
+            sorted(a["per_instance"].keys()), sorted(b["per_instance"].keys())
+        )
+
+    def test_different_seed_different_instances(self):
+        a = self._run(seed=42, count=3)
+        b = self._run(seed=7, count=3)
+        self.assertNotEqual(
+            sorted(a["per_instance"].keys()), sorted(b["per_instance"].keys())
+        )
+
+    def test_unset_seed_preserves_old_behaviour(self):
+        import os
+
+        os.environ["CVRP_EVAL_INSTANCES"] = "VRP-19-2 VHO-22-3"
+        try:
+            m = ev.evaluate(str(CVRP_ROOT / "baseline" / "solver.py"))["metrics"]
+        finally:
+            os.environ.pop("CVRP_EVAL_INSTANCES", None)
+        self.assertEqual(m["instances"], 2.0)
+        self.assertFalse(any(n.startswith("GEN-") for n in m["per_instance"]))
+
+
 class TestSplitEvolveBlocks(unittest.TestCase):
     def test_split(self):
         src = "a\n# EVOLVE-BLOCK-START\nb\n# EVOLVE-BLOCK-END\nc\n"

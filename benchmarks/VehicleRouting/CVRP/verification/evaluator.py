@@ -32,6 +32,12 @@ Environment overrides:
     CVRP_EVAL_MAX_INSTANCES  cap on number of instances
     CVRP_EVAL_SCORE_SCALE    score knob (default 1.0)
     CVRP_EVAL_REFERENCE_JSON override path to reference.json (testing only)
+    CVRP_EVAL_GENERATE_SEED  when set, additionally generate fresh instances
+                             from this seed at evaluation time (anti-hardcoding:
+                             the candidate cannot have seen them); each generated
+                             instance is scored against a reference computed on
+                             the fly by the reference solver
+    CVRP_EVAL_GENERATE_COUNT number of generated instances (default 6)
 """
 from __future__ import annotations
 
@@ -64,6 +70,16 @@ from validator import (  # noqa: E402
     select_determinism_probes,
     split_evolve_blocks,
 )
+
+# Runtime instance generation (anti-hardcoding) reuses the deterministic
+# instance generator and the reference solver; see the design note in
+# investigating/docs/CVRP_heldout_记忆漏洞_问题与修复方案.md.
+from generate_instances import SPECS, generate_instance  # noqa: E402
+from ref_solver import grasp_solve, route_dist  # noqa: E402
+
+# Same fixed seed list the reference solver uses when producing reference.json.
+REF_SEEDS = (123, 2024, 7)
+DEFAULT_GENERATE_COUNT = 6
 
 # Backward-compatible alias used by the unit tests.
 _split_evolve_blocks = split_evolve_blocks
@@ -228,6 +244,40 @@ def _all_instance_paths() -> list[Path]:
     return paths
 
 
+def _reference_distance(inst: dict) -> float:
+    """Deterministic reference distance for an instance (GRASP + LNS, fixed seeds)."""
+    iters = max(100, 4 * inst["n"])
+    return min(
+        sum(
+            route_dist(r, inst["distance"])
+            for r in grasp_solve(inst, starts=40, seed=seed, lns_iters=iters)
+        )
+        for seed in REF_SEEDS
+    )
+
+
+def _generate_instances(base_seed: int, count: int, out_dir: Path) -> tuple[list[Path], dict[str, float]]:
+    """Generate fresh instances from `base_seed`; return (instance files, ref distances).
+
+    Instance sizes follow the public set's SPECS (cycled), and per-instance RNG
+    streams are derived as `base_seed * 1000 + i`, matching multiseed_stat.py.
+    Deterministic: same seed + same machine yields the same instances and refs.
+    """
+    paths: list[Path] = []
+    refs: dict[str, float] = {}
+    spec_count = len(SPECS)
+    for i in range(count):
+        name, n, k, v, _seed_key = SPECS[i % spec_count]
+        fname = f"GEN-{base_seed}-{i + 1}"
+        text = generate_instance(fname, n, k, v, seed=base_seed * 1000 + i)
+        inst_path = out_dir / f"{fname}.vrp"
+        inst_path.write_text(text, encoding="ascii", newline="\n")
+        inst = parse_instance(inst_path)
+        refs[fname] = float(_reference_distance(inst))
+        paths.append(inst_path)
+    return paths, refs
+
+
 def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, Any]:
     solver_path = Path(program_path).resolve()
     if not solver_path.is_file():
@@ -248,6 +298,20 @@ def evaluate(program_path: str, *, repo_root: Path | None = None) -> dict[str, A
     reference = load_reference()
     python = sys.executable
     tmp_dir = Path(tempfile.mkdtemp(prefix="cvrp_eval_"))
+
+    # Anti-hardcoding: when a generation seed is provided, add fresh instances
+    # generated at evaluation time (the candidate cannot have memorized them).
+    gen_seed_raw = _parse_env_str("CVRP_EVAL_GENERATE_SEED")
+    if gen_seed_raw:
+        try:
+            gen_count = int(_parse_env_str("CVRP_EVAL_GENERATE_COUNT") or DEFAULT_GENERATE_COUNT)
+            gen_count = max(0, gen_count)
+        except ValueError:
+            gen_count = DEFAULT_GENERATE_COUNT
+        if gen_count > 0:
+            gen_paths, gen_refs = _generate_instances(int(gen_seed_raw), gen_count, tmp_dir)
+            inst_paths = list(inst_paths) + gen_paths
+            reference.update(gen_refs)
 
     # Static integrity checks + determinism (probe small / medium / large
     # instances; each probe runs the candidate twice).

@@ -129,6 +129,16 @@ and 95.65).
   `data/instances_heldout/` and are never exposed to the agent (absent from
   `agent_files.txt` and `Task.md`), so hardcoding routes by name cannot
   generalize to them.
+- **Runtime-generated instances**: set `CVRP_EVAL_GENERATE_SEED` (and
+  optionally `CVRP_EVAL_GENERATE_COUNT`, default 6) to additionally generate
+  fresh instances at evaluation time from that seed. Each generated instance
+  is scored against a reference computed on the fly by the reference solver,
+  so a candidate cannot memorize the evaluation set even if it has seen every
+  public instance file. Same seed ⇒ same instances ⇒ reproducible. Works in
+  the direct evaluator and the unified runtime in process mode; in docker
+  isolation mode the unified runtime does not forward arbitrary env vars into
+  the container, so generation there needs the seed forwarded by the runner
+  (framework-level limitation).
 - **Sandbox**: `copy_files.txt` copies only `baseline/`, `data/instances/`,
   `data/instances_heldout/` and `frontier_eval/` into the evaluation sandbox.
   `frontier_eval/evaluator.py` is self-contained (parsing, validation,
