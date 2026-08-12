@@ -1,1 +1,1 @@
-FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR={repo_root}/benchmarks/VehicleRouting/CVRP {python} frontier_eval/run_eval.py --candidate {candidate} --metrics-out metrics.json --artifacts-out artifacts.json
+FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR={benchmark_source} {python} frontier_eval/run_eval.py --candidate {candidate} --metrics-out metrics.json --artifacts-out artifacts.json

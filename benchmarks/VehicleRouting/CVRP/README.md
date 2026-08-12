@@ -57,9 +57,9 @@ python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorith
 ```
 
 > Docker isolation is validated on Linux / WSL. `frontier_eval/eval_command.txt`
-> injects the host-benchmark path via the `{repo_root}` placeholder, so scoring
-> works without framework changes; if the container user cannot write the
-> evaluation sandbox, set `task.runtime.docker_user=<host uid>:<host gid>`
+> injects the host-benchmark path via the `{benchmark_source}` placeholder, so
+> scoring works without framework changes; if the container user cannot write
+> the evaluation sandbox, set `task.runtime.docker_user=<host uid>:<host gid>`
 > (e.g. `1000:1000`). On Windows hosts the unified docker path is blocked by a
 > framework path bug (`Path.resolve()` rewrites container paths to drive
 > paths) — run docker mode under WSL instead.
@@ -162,7 +162,7 @@ and 95.65).
   so a candidate cannot memorize the evaluation set even if it has seen every
   public instance file. Same seed ⇒ same instances ⇒ reproducible. Works in
   the direct evaluator and the unified runtime in process mode. In docker
-  isolation mode (Linux / WSL) scoring works via the `{repo_root}` env
+  isolation mode (Linux / WSL) scoring works via the `{benchmark_source}` env
   injection in `eval_command.txt`, but runtime-generated instances are not
   available there because the unified runtime does not forward the seed env
   var into the container (framework-level limitation).
@@ -223,6 +223,7 @@ python verification/evaluator.py baseline/solver.py     # -> 54.69, valid 1.0 (2
 python verification/test_evaluator.py                   # -> 22 unit tests pass
 python verification/test_validator.py                   # -> 15 unit tests pass
 python verification/test_ref_solver.py                  # -> 5 unit tests pass
+python verification/test_frontier_eval_evaluator.py     # -> 6 unit tests pass (sandbox copy)
 ```
 
 Unified adapter checks (repo root):

@@ -36,6 +36,7 @@ from typing import Any
 TASK_ROOT = Path(__file__).resolve().parents[1]  # <sandbox root> or CVRP dir
 INSTANCES_DIR = TASK_ROOT / "data" / "instances"
 HELDOUT_DIR = TASK_ROOT / "data" / "instances_heldout"
+REFERENCE_JSON = TASK_ROOT / "data" / "reference.json"
 
 EVOLVE_START = "# EVOLVE-BLOCK-START"
 EVOLVE_END = "# EVOLVE-BLOCK-END"
@@ -274,16 +275,30 @@ def _source_benchmark_dir() -> Path | None:
 
 
 def load_reference() -> dict[str, float]:
-    """Reference distances, read from the host (never from the sandbox)."""
+    """Reference distances.
+
+    Inside the unified sandbox this must come from the host benchmark dir
+    (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`; `reference.json` is never
+    copied into the sandbox). Outside the sandbox (direct run / tests) the
+    local `REFERENCE_JSON` is used as a fallback, mirroring the verification
+    evaluator so the two copies cannot drift apart.
+    """
+    candidates: list[Path] = []
     src = _source_benchmark_dir()
     if src is not None:
-        path = src / "data" / "reference.json"
-        if path.is_file():
-            try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-                return {k: float(v) for k, v in raw.items()}
-            except Exception:
-                pass
+        candidates.append(src / "data" / "reference.json")
+    env_path = os.environ.get("CVRP_EVAL_REFERENCE_JSON", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.append(REFERENCE_JSON)
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return {k: float(v) for k, v in raw.items()}
+        except Exception:
+            continue
     return {}
 
 
