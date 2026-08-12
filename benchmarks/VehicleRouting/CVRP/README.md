@@ -56,6 +56,14 @@ docker build -t cvrp-benchmark -f verification/docker/Dockerfile .
 python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0 task.runtime.isolation_mode=docker task.runtime.docker_image=cvrp-benchmark
 ```
 
+> Docker isolation is validated on Linux / WSL. `frontier_eval/eval_command.txt`
+> injects the host-benchmark path via the `{repo_root}` placeholder, so scoring
+> works without framework changes; if the container user cannot write the
+> evaluation sandbox, set `task.runtime.docker_user=<host uid>:<host gid>`
+> (e.g. `1000:1000`). On Windows hosts the unified docker path is blocked by a
+> framework path bug (`Path.resolve()` rewrites container paths to drive
+> paths) — run docker mode under WSL instead.
+
 The image intentionally contains no benchmark files (no `reference.json`, no
 reference solver); the unified runtime mounts the sandbox into the container.
 
@@ -135,10 +143,11 @@ and 95.65).
   is scored against a reference computed on the fly by the reference solver,
   so a candidate cannot memorize the evaluation set even if it has seen every
   public instance file. Same seed ⇒ same instances ⇒ reproducible. Works in
-  the direct evaluator and the unified runtime in process mode; in docker
-  isolation mode the unified runtime does not forward arbitrary env vars into
-  the container, so generation there needs the seed forwarded by the runner
-  (framework-level limitation).
+  the direct evaluator and the unified runtime in process mode. In docker
+  isolation mode (Linux / WSL) scoring works via the `{repo_root}` env
+  injection in `eval_command.txt`, but runtime-generated instances are not
+  available there because the unified runtime does not forward the seed env
+  var into the container (framework-level limitation).
 - **Sandbox**: `copy_files.txt` copies only `baseline/`, `data/instances/`,
   `data/instances_heldout/` and `frontier_eval/` into the evaluation sandbox.
   `frontier_eval/evaluator.py` is self-contained (parsing, validation,

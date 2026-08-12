@@ -55,6 +55,8 @@ docker build -t cvrp-benchmark -f verification/docker/Dockerfile .
 python -m frontier_eval task=unified task.benchmark=VehicleRouting/CVRP algorithm.iterations=0 task.runtime.isolation_mode=docker task.runtime.docker_image=cvrp-benchmark
 ```
 
+> Docker 隔离在 **Linux / WSL** 下已验证可用。`frontier_eval/eval_command.txt` 通过 `{repo_root}` 占位符把宿主 benchmark 路径注入评测命令，评分无需改框架即可工作；若容器用户无法写入评测沙箱，设置 `task.runtime.docker_user=<宿主 uid>:<宿主 gid>`（如 `1000:1000`）。Windows 宿主的 unified docker 路径被框架的路径 bug 卡住（`Path.resolve()` 会把容器路径改写为盘符路径）——请在 WSL 下运行 docker 模式。
+
 镜像内**刻意不包含任何 benchmark 文件**（没有 `reference.json`、没有参考求解器）；unified 运行时会把沙箱挂载进容器。
 
 ## 评分
@@ -95,7 +97,7 @@ agent 分数为随机进化运行的 "best found"；有多次运行的一并列�
 ## 评测完整性
 
 - **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，从不向 agent 暴露（不在 `agent_files.txt` 和 `Task.md` 中），因此按实例名硬编码无法泛化到它们；在 held-out 集上打分衡量 agent 是否学到了*可泛化*的求解方法。
-- **评测时生成实例**：设置 `CVRP_EVAL_GENERATE_SEED`（可选 `CVRP_EVAL_GENERATE_COUNT`，默认 6），评测器会在评分时用该种子**现场生成全新实例**参与评分，每个生成实例的参考距离由参考求解器当场计算——这样即使候选见过所有公开实例文件，也无法背答案。同一种子 ⇒ 同一批实例 ⇒ 完全可复现。直跑评测器与 unified 运行时（process 模式）均支持；docker 隔离模式下 unified 运行时不会把任意环境变量传入容器，需要 runner 以其他方式把种子传进去（框架级限制）。
+- **评测时生成实例**：设置 `CVRP_EVAL_GENERATE_SEED`（可选 `CVRP_EVAL_GENERATE_COUNT`，默认 6），评测器会在评分时用该种子**现场生成全新实例**参与评分，每个生成实例的参考距离由参考求解器当场计算——这样即使候选见过所有公开实例文件，也无法背答案。同一种子 ⇒ 同一批实例 ⇒ 完全可复现。直跑评测器与 unified 运行时（process 模式）均支持；docker 隔离模式（Linux/WSL）下评分可用（靠 `eval_command.txt` 的 `{repo_root}` 注入），但运行时生成不可用——unified 运行时不会把种子环境变量传入容器（框架级限制）。
 - **沙箱隔离**：`copy_files.txt` 只把 `baseline/`、`data/instances/`、`data/instances_heldout/`、`frontier_eval/` 复制进评测沙箱。`frontier_eval/evaluator.py` 是自包含的（解析、校验、评分与完整性检查全部内嵌），因此**任何 `verification/` 文件（包括参考求解器）都不复制**。`reference.json` 从不复制；评测器通过 `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR` 从宿主读取参考距离，候选子进程运行时不含该环境变量。
 - **Preflight 检查**（`verification/validator.py`）：评测器会静态拒绝修改 EVOLVE-BLOCK 区外代码、引用 `verification` / `ref_solver` / `reference.json`、含绝对路径、或按实例名硬编码路线的候选；另有**确定性探针**——在最小 / 中等 / 最大 3 个代表实例上把候选各跑两次，输出不一致（非确定性）即判无效。
 - **威胁模型**：held-out 实例只对 agent 的*上下文*隐藏（不在 `agent_files.txt` 和 `Task.md` 中），目的是防止 LLM 在生成代码时按实例名硬编码。实例文件本身在仓库里是公开的——能读到仓库的人总能手写一个求解器，任何 benchmark 都无法阻止这一点。unified 运行时（process 与 docker 隔离）会把宿主仓库暴露给候选进程（这是所有任务共享的框架级行为）；preflight 检查是针对 LLM 朴素尝试的威慑，不是针对恶意人类的沙箱。评分只衡量解的质量，从不看代码来源。
