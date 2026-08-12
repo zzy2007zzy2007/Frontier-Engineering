@@ -174,7 +174,10 @@ and 95.65).
   including the reference solver — are copied. `reference.json` is never
   copied; the evaluator reads it from the host benchmark dir
   (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`), and the candidate subprocess
-  runs without that variable.
+  runs with **all `FRONTIER_*` variables removed** (plus reference/generation
+  settings), so it cannot learn the host repo path — this closes the
+  `FRONTIER_ENGINEERING_ROOT` side channel that would otherwise let a candidate
+  find and import `verification/ref_solver.py` on the host.
 - **Preflight checks** (`verification/validator.py`): the evaluator statically
   rejects candidates that modify code outside the EVOLVE-BLOCK, reference
   `verification` / `ref_solver` / `reference.json`, contain absolute paths, or

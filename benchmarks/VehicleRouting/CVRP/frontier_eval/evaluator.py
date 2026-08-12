@@ -198,10 +198,14 @@ def static_check_source(src: str, baseline_src: str | None = None) -> list[str]:
 
 
 def candidate_env() -> dict[str, str]:
+    """Candidate subprocess env, stripped of all `FRONTIER_*` (the unified
+    runtime sets `FRONTIER_ENGINEERING_ROOT` to the repo root — a candidate
+    could use it to find and import `verification/ref_solver.py` on the host)
+    and of reference-distance / generation-seed settings."""
     env = os.environ.copy()
     for key in list(env):
         upper = key.upper()
-        if upper.startswith("FRONTIER_EVAL_UNIFIED_") or key in (
+        if upper.startswith("FRONTIER") or key in (
             "CVRP_EVAL_REFERENCE_JSON",
             "CVRP_EVAL_REFERENCES",
             "CVRP_EVAL_GENERATE_SEED",

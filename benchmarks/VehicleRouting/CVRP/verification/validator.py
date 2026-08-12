@@ -130,11 +130,14 @@ def check_candidate(
 def candidate_env() -> dict[str, str]:
     """Environment for the candidate subprocess, stripped of host paths and any
     reference-distance settings so the candidate cannot locate the scoring
-    baseline on the host."""
+    baseline on the host. All `FRONTIER_*` variables are removed (the unified
+    runtime sets `FRONTIER_ENGINEERING_ROOT` to the repo root, which would
+    otherwise let a candidate find and import `verification/ref_solver.py` on
+    the host)."""
     env = os.environ.copy()
     for key in list(env):
         upper = key.upper()
-        if upper.startswith("FRONTIER_EVAL_UNIFIED_") or key in (
+        if upper.startswith("FRONTIER") or key in (
             "CVRP_EVAL_REFERENCE_JSON",
             "CVRP_EVAL_REFERENCES",
         ):
