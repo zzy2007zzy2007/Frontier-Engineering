@@ -186,7 +186,7 @@ Baseline reproduction:
 ```bash
 # inside the CVRP directory
 python verification/evaluator.py baseline/solver.py     # -> 54.69, valid 1.0 (24 instances)
-python verification/test_evaluator.py                   # -> 18 unit tests pass
+python verification/test_evaluator.py                   # -> 22 unit tests pass
 python verification/test_validator.py                   # -> 15 unit tests pass
 python verification/test_ref_solver.py                  # -> 5 unit tests pass
 ```
