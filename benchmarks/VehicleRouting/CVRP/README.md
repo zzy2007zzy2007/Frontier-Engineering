@@ -148,11 +148,15 @@ and 95.65).
 
 - **Held-out instances**: 12 `VHO-*` instances in `data/instances_heldout/`
   double the evaluation set to 24 and are scored alongside the public ones.
-  Their files stay on the host and are **not** copied into the evaluation
-  sandbox: the evaluator reads them from the host
-  (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`) and passes each path to the
-  candidate only at scoring time, so a candidate cannot read them during
-  evolution. Per-instance name-keyed hardcoding is additionally rejected
+  Their `.vrp` files are **not** copied into the evaluation sandbox: the
+  evaluator reads the paths from the host
+  (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`) and hands each to the
+  candidate only while that instance is being scored. The files are public in
+  the repo, and a running candidate receives the path and can read the file
+  (see the threat model below); `Task.md` and `constraints.txt` tell the agent
+  such held-out instances exist and will be scored, but their data is not
+  available at code-generation time, so an LLM cannot hardcode routes by
+  instance name. Per-instance name-keyed hardcoding is additionally rejected
   statically by `validator.py`, and `CVRP_EVAL_GENERATE_SEED` adds fresh
   instances at evaluation time so the scored set is not predictable.
 - **Runtime-generated instances**: set `CVRP_EVAL_GENERATE_SEED` (and

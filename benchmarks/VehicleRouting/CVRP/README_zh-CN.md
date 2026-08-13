@@ -106,7 +106,7 @@ agent 分数为随机进化运行的 "best found"；有多次运行的一并列�
 
 ## 评测完整性
 
-- **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，把评测集扩充到 24 个并与公开实例一起评分。它们的文件**留在宿主、不复制进评测沙箱**：评测器从宿主（`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`）读取，评分时才把每个路径交给候选，因此候选在演化过程中读不到它们；`validator.py` 还会静态拒绝按实例名硬编码，`CVRP_EVAL_GENERATE_SEED` 则让评分时的实例集不可预测。
+- **Held-out 实例**：12 个 `VHO-*` 实例位于 `data/instances_heldout/`，把评测集扩充到 24 个并与公开实例一起评分。它们的 `.vrp` 文件**不复制进评测沙箱**：评测器从宿主（`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`）读取路径，只在评分该实例时把路径交给候选。这些文件在仓库里是公开的，运行中的候选收到路径后确实能读到文件（见下方威胁模型）；`Task.md` 和 `constraints.txt` 会告知 agent 存在这类 held-out 实例且会被评分，但代码生成时拿不到它们的实例数据，因此 LLM 无法按实例名硬编码路线；`validator.py` 还会静态拒绝按实例名硬编码，`CVRP_EVAL_GENERATE_SEED` 则让评分时的实例集不可预测。
 - **评测时生成实例**：设置 `CVRP_EVAL_GENERATE_SEED`（可选 `CVRP_EVAL_GENERATE_COUNT`，默认 6），评测器会在评分时用该种子**现场生成全新实例**参与评分，每个生成实例的参考距离由参考求解器当场计算——这样即使候选见过所有公开实例文件，也无法背答案。同一种子 ⇒ 同一批实例 ⇒ 完全可复现。直跑评测器与 unified 运行时（process 模式）均支持；docker 隔离模式（Linux/WSL）下评分可用（靠 `eval_command.txt` 的 `{benchmark_source}` 注入），但运行时生成不可用——unified 运行时不会把种子环境变量传入容器（框架级限制）。
 - **沙箱隔离**：`copy_files.txt` 只把 `baseline/`、`data/instances/`、`frontier_eval/` 复制进评测沙箱（held-out 实例与 `reference.json` 从宿主读取、从不复制）。`frontier_eval/evaluator.py` 是自包含的（解析、校验、评分与完整性检查全部内嵌），因此**任何 `verification/` 文件（包括参考求解器）都不复制**。`reference.json` 从不复制；评测器通过 `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR` 从宿主读取参考距离，候选子进程运行时**所有 `FRONTIER_*` 变量都被剥离**（外加参考/生成设置），无法得知宿主仓库路径——这封死了 `FRONTIER_ENGINEERING_ROOT` 侧信道（否则候选可借此找到并导入宿主上的 `verification/ref_solver.py`）。
 - **Preflight 检查**（`verification/validator.py`）：评测器会静态拒绝修改 EVOLVE-BLOCK 区外代码、引用 `verification` / `ref_solver` / `reference.json`、含绝对路径、或按实例名硬编码路线的候选；另有**确定性探针**——在最小 / 中等 / 最大 3 个代表实例上把候选各跑两次，输出不一致（非确定性）即判无效。
@@ -139,9 +139,10 @@ baseline 复现：
 ```bash
 # 在 CVRP 目录下
 python verification/evaluator.py baseline/solver.py     # -> 54.69, valid 1.0（24 实例）
-python verification/test_evaluator.py                   # -> 18 个单元测试全部通过
-python verification/test_validator.py                   # -> 15 个单元测试全部通过
+python verification/test_evaluator.py                   # -> 23 个单元测试全部通过
+python verification/test_validator.py                   # -> 16 个单元测试全部通过
 python verification/test_ref_solver.py                  # -> 5 个单元测试全部通过
+python verification/test_frontier_eval_evaluator.py     # -> 6 个单元测试全部通过（沙箱版）
 python verification/multiseed_stat.py --seeds 111 222 333  # -> 57.73 ± 1.58
 ```
 
