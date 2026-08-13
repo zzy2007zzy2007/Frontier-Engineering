@@ -182,14 +182,10 @@ class TestDeterminism(unittest.TestCase):
         self.assertEqual(ns[-1], all_ns[-1])
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class TestCandidateEnvStripsFrontier(unittest.TestCase):
     """candidate_env must strip FRONTIER_ENGINEERING_ROOT (repo-root side channel)."""
 
-    def test_strips_fronteer_engineering_root(self):
+    def test_strips_frontier_engineering_root(self):
         import os
 
         import validator as v
@@ -203,3 +199,7 @@ class TestCandidateEnvStripsFrontier(unittest.TestCase):
             os.environ.pop("FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR", None)
         self.assertNotIn("FRONTIER_ENGINEERING_ROOT", env)
         self.assertNotIn("FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR", env)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
