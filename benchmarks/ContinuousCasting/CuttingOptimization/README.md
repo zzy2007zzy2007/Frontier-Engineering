@@ -61,9 +61,22 @@ The evaluator is pure stdlib, so a minimal `python` image suffices. Build it and
 unified runtime's `isolation_mode=docker`:
 
 ```bash
-# Build (inside the CuttingOptimization directory)
-docker build -t cutting-opt-benchmark -f verification/docker/Dockerfile .
+# Build (from the repo root)
+docker build -t cutting-opt-benchmark -f benchmarks/ContinuousCasting/CuttingOptimization/verification/docker/Dockerfile benchmarks/ContinuousCasting/CuttingOptimization
+
+# Score the baseline under docker isolation (WSL/Linux; Windows hosts are limited by a
+# framework path bug). docker mode must NOT set task.runtime.shell; set DOCKER_USER so the
+# container can write the WSL /tmp sandbox.
+FRONTIER_EVAL_UNIFIED_DOCKER_USER=1000:1000 \
+  .venvs/frontier-eval-driver-wsl/bin/python -m frontier_eval task=unified \
+  task.benchmark=ContinuousCasting/CuttingOptimization algorithm=openevolve algorithm.iterations=0 \
+  llm.timeout=600 task.runtime.isolation_mode=docker task.runtime.docker_image=cutting-opt-benchmark
 ```
+
+**Verified (WSL, docker isolation)**: baseline `combined_score=72.49, valid=1.0, num_instances=8`
+— identical to process mode. `docker` scoring works under WSL/Linux because `eval_command.txt`
+injects `FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR={benchmark_source}`, which the container
+resolves to the mounted repo path (no framework env-forwarding needed).
 
 ## Tests
 

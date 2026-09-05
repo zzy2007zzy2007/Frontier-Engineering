@@ -112,6 +112,8 @@ python -m unittest discover -s verification -p "test_*.py"
 
 ## Docker
 
-提供最简 `python:3.11-slim` 镜像（`verification/docker/Dockerfile`）。Docker 隔离评分依赖共享
-Frontier-Eng 框架的 env 转发（已知框架级限制，参考路径 env 可能进不了容器）。`docker` 隔离最好在
-WSL/Linux 下用 unified 的 `isolation_mode=docker` 验证；Windows 宿主受框架路径 bug 限制。
+提供最简 `python:3.11-slim` 镜像（`verification/docker/Dockerfile`）。构建镜像后用 unified 的
+`isolation_mode=docker`（WSL/Linux；Windows 宿主受框架路径 bug 限制）。**已在 WSL 下实测通过**：
+基线 `combined_score=52.40, valid=1.0, num_instances=8`，与 process 模式一致。这也再次验证了在线版
+防作弊在容器里同样成立——固定实例（含隐藏报废表）**不进沙箱**，评测器从宿主源 benchmark 目录
+（`{benchmark_source}` → 容器内挂载的 repo 路径）加载，候选在容器内读不到隐藏报废表。

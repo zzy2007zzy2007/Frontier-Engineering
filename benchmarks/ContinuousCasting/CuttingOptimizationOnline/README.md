@@ -157,8 +157,22 @@ far an online agent can get without full foresight.
 
 ## Docker
 
-A minimal `python:3.11-slim` image is provided (`verification/docker/Dockerfile`). Docker
-isolation scoring depends on the shared Frontier-Eng framework's env-forwarding, which is a
-known framework-level limitation (the reference path env may not reach the container).
-`docker` isolation is therefore best verified under WSL/Linux with the unified runtime's
-`isolation_mode=docker`; on Windows hosts it is limited by a framework path bug.
+A minimal `python:3.11-slim` image is provided (`verification/docker/Dockerfile`). Build it
+and run the unified runtime in `isolation_mode=docker` (WSL/Linux; Windows hosts are limited
+by a framework path bug). docker mode must NOT set `task.runtime.shell`; set
+`FRONTIER_EVAL_UNIFIED_DOCKER_USER=1000:1000` so the container can write the WSL `/tmp`
+sandbox:
+
+```bash
+docker build -t cutting-opt-online -f benchmarks/ContinuousCasting/CuttingOptimizationOnline/verification/docker/Dockerfile benchmarks/ContinuousCasting/CuttingOptimizationOnline
+FRONTIER_EVAL_UNIFIED_DOCKER_USER=1000:1000 \
+  .venvs/frontier-eval-driver-wsl/bin/python -m frontier_eval task=unified \
+  task.benchmark=ContinuousCasting/CuttingOptimizationOnline algorithm=openevolve algorithm.iterations=0 \
+  llm.timeout=600 task.runtime.isolation_mode=docker task.runtime.docker_image=cutting-opt-online
+```
+
+**Verified (WSL, docker isolation)**: baseline `combined_score=52.40, valid=1.0, num_instances=8`
+— identical to process mode. This also confirms the online anti-cheat holds in docker: the fixed
+instances (with the hidden defect schedule) are **not** copied into the sandbox; the evaluator
+loads them from the host source benchmark dir (`{benchmark_source}` → the mounted repo path in the
+container), so the candidate in the container never reads the hidden defects.

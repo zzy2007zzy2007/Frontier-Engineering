@@ -47,6 +47,12 @@ python verification/evaluate.py baseline/solver.py --generate-seed <SEED>
 python verification/evaluate.py baseline/solver.py --time-budget 10
 ```
 
+## Docker
+
+提供最简 `python:3.11-slim` 镜像（`verification/docker/Dockerfile`）。构建后用 unified 的
+`isolation_mode=docker`（WSL/Linux；Windows 宿主受框架路径 bug 限制）。**已在 WSL 下实测通过**：
+基线 `combined_score=72.49, valid=1.0, num_instances=8`，与 process 模式一致。
+
 ## 测试
 
 ```powershell
