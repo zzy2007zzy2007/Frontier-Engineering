@@ -1,9 +1,9 @@
 """多运行（多种子/多轮）agent 分数统计：对一组框架运行目录取 combined_score 的 mean±std。
 
 用法：
-    python verification/multiseed_stat.py --runs-dir runs/unified__ContinuousCasting__CuttingOptimization/openevolve
+    python verification/multiseed_stat.py --runs-dir runs/unified__ContinuousCasting__CuttingOptimizationOnline/openevolve
     python verification/multiseed_stat.py --runs-dir "runs/**/openevolve/deepseek-v4-flash"   # glob
-    python verification/multiseed_stat.py --runs-dir <dir> --pattern "*openevolve*"
+    python verification/multiseed_stat.py --runs-dir <dir> --pattern "*openevolve*" --reference 76.37
 
 从每个运行目录下读 `<framework>/best/best_program_info.json` 的 `metrics.combined_score`
 （框架统一保存的 best 程序分数），对多次运行做 mean / std / min / max，
@@ -22,7 +22,7 @@ import math
 import statistics
 from pathlib import Path
 
-DEFAULT_REFERENCE = 88.72  # 全知参考解利用率（verification/ref_solver.py），可 --reference 覆盖
+DEFAULT_REFERENCE = 76.37  # 在线版全知参考解利用率（verification/ref_solver.py），可 --reference 覆盖
 
 
 def _best_score(run_dir: Path) -> float | None:

@@ -58,6 +58,8 @@ $env:ONLINE_CUT_EVAL_GENERATE_SEED = "<SEED rank>"
 python verification/evaluate.py baseline/solver.py
 
 # Multi-run stats (mean ± std) across a framework run dir
+# Multi-run stats — note the tool aggregates every run in the dir; point it at the full run dir
+# (it defaults to the online clairvoyant reference 76.37), or pass a sub-glob to restrict.
 python verification/multiseed_stat.py --runs-dir runs/unified__ContinuousCasting__CuttingOptimizationOnline/openevolve
 ```
 

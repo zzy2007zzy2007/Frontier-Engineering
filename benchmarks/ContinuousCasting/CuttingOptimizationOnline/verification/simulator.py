@@ -3,14 +3,16 @@
 模型（详见 Task.md）：
 - 材料用流坐标 x∈[0,S]，S = v*浇铸时长。横截面 x 到达切割点在 x/v + D/v。
 - 隐藏异常（由 anomaly_seed 决定）：报废段占流区间 [x_a, x_a+scrap_len]。
-- 揭示提前量 reveal_lead（分钟；v=1 时等于"上游米数"）：一段报废料在
-  x_a <= cut_pos + reveal_lead 时"揭示"给 agent；否则不可见。reveal_lead=60 为忠实版
-  （τ_a 即知，60m 提前量）；reveal_lead<max_basic 时制造"未知带"（信息不对称难度）。
+- 揭示提前量 reveal_lead（米；v=1 时也等于"提前分钟数"）：一段报废料在
+  x_a <= cut_pos + reveal_lead 时"揭示"给 agent；否则不可见。最终配置默认 reveal_lead=10
+  （隐藏异常，信息不对称）；reveal_lead=60 为"忠实版"（τ_a 即知，60m 提前量，接近离线）；
+  reveal_lead<max_basic 时制造"未知带"（信息不对称难度）。
 - 最小切段污染：切割机每轮切割+回程对应 v*(tc+tr) 米；且能运走下限为 min_basic(4.8)。
   **物理上切不出 < min_basic 的块**，因此 0.8m 报废段必然被包在一个 >= min_basic 的
   污染块里、整块报废（不允许像离线版那样把报废段当 0.8m 小块切出）。
 - 评分：scrap = 所有污染块长度 + 干净块超窗口报废 + 干净块 <min_process 整块报废；
-  penalty = 干净块 |min(块长,target_max)-target|；util = 100*(S-scrap)/S。
+  penalty = 干净块 |min(块长,target_max)-target|；
+  util = 100*(S - (scrap + 1e-4*penalty))/S（微小破平，与离线口径一致），metric 保留精度。
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 DEFAULTS = {
-    "v": 1.0, "tc": 3, "tr": 1, "buffer_len": 60.0, "scrap_len": 0.8, "reveal_lead": 60.0,
+    "v": 1.0, "tc": 3, "tr": 1, "buffer_len": 60.0, "scrap_len": 0.8, "reveal_lead": 10.0,
     "min_basic": 4.8, "max_basic": 12.6, "min_process": 8.0, "max_process": 11.6,
 }
 SUM_TOL = 1e-3
@@ -148,9 +150,10 @@ def score(inst: dict[str, Any], cuts: list[float]) -> tuple[bool, dict[str, Any]
             total_scrap += max(0.0, c - float(inst["customer"]["target_max"]))
             total_penalty += abs(min(c, float(inst["customer"]["target_max"]))
                                  - float(inst["customer"]["target"]))
-    # util 含极小贴合度惩罚（破平），与离线版口径一致：scrap 先、penalty 破平
+    # util 含极小贴合度惩罚（破平），与离线版口径一致：scrap 先、penalty 破平。
+    # 保留到 4 位（不低于 penalty 量级），否则惩罚项会被 2 位舍入吞掉、破平失效。
     lam = float(inst.get("limits", {}).get("target_penalty_weight", 1e-4))
     util = max(0.0, 100.0 * (S - (total_scrap + lam * total_penalty)) / S)
     return True, {"valid": True, "scrap": round(total_scrap, 4),
-                  "penalty": round(total_penalty, 4), "util": round(util, 2),
+                  "penalty": round(total_penalty, 4), "util": round(util, 4),
                   "cuts": cuts}

@@ -215,7 +215,8 @@ def evaluate(program_path: str, *, time_budget: float = 60.0, python: str | None
             shutil.rmtree(tmp, ignore_errors=True)
 
     combined = total / len(instances) if instances else 0.0
-    return {"combined_score": round(combined, 2), "valid": 1.0 if all_valid and not violations else 0.0,
+    # 保留 3 位：贴合度惩罚量级 ~1e-3，2 位舍入会把破平项抹掉，故至少 3 位
+    return {"combined_score": round(combined, 3), "valid": 1.0 if all_valid and not violations else 0.0,
             "per_instance": per_instance, "num_instances": len(instances),
             "time_budget_s": time_budget, "generate_seed": gen_seed_raw or None}
 
