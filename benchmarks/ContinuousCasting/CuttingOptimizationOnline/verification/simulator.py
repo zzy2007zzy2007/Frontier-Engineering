@@ -148,7 +148,9 @@ def score(inst: dict[str, Any], cuts: list[float]) -> tuple[bool, dict[str, Any]
             total_scrap += max(0.0, c - float(inst["customer"]["target_max"]))
             total_penalty += abs(min(c, float(inst["customer"]["target_max"]))
                                  - float(inst["customer"]["target"]))
-    util = max(0.0, 100.0 * (S - total_scrap) / S)
+    # util 含极小贴合度惩罚（破平），与离线版口径一致：scrap 先、penalty 破平
+    lam = float(inst.get("limits", {}).get("target_penalty_weight", 1e-4))
+    util = max(0.0, 100.0 * (S - (total_scrap + lam * total_penalty)) / S)
     return True, {"valid": True, "scrap": round(total_scrap, 4),
                   "penalty": round(total_penalty, 4), "util": round(util, 2),
                   "cuts": cuts}

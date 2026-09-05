@@ -1,4 +1,4 @@
-# CuttingOptimization：连铸切割的在线优化（Frontier-Eng 基准）
+# CuttingOptimization：连铸切割优化（离线/静态版，Frontier-Eng 基准）
 
 一个**原创**的 Frontier-Engineering 基准，灵感来自 2021 全国大学生数学建模竞赛 D 题
 《连铸切割的在线优化》，并被形式化成**确定性、自包含**的切割优化任务。

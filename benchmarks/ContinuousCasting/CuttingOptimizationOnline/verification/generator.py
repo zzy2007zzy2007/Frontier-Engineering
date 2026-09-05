@@ -24,7 +24,7 @@ MAX_BASIC = 12.6
 LIMITS = {"min_basic": 4.8, "max_basic": 12.6, "min_process": 8.0, "max_process": 11.6}
 
 
-def generate(seed: int, difficulty: str = "medium", reveal_lead: float = 60.0,
+def generate(seed: int, difficulty: str = "medium", reveal_lead: float = 10.0,
              n_anomaly: int | None = None) -> dict[str, Any]:
     rng = random.Random(seed * 10007 + 11)
     if difficulty == "easy":

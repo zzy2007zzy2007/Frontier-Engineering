@@ -1,4 +1,4 @@
-# 连铸切割的在线优化（CuttingOptimization）
+# 连铸切割优化（离线/静态版，CuttingOptimization）
 
 ## 1. 背景
 

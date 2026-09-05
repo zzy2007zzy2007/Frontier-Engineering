@@ -10,10 +10,10 @@
 - 拉坯速度 `v = 1.0` m/min；切一块 `tc = 3` min + 回程 `tr = 1` min；结晶器→切割机 `D = 60` m。
 - 报废段长 `scrap_len = 0.8` m。
 - 切长窗口：能运 `[min_basic, max_basic] = [4.8, 12.6]`；下道可接 `[min_process, max_process] = [8.0, 11.6]`；用户 `target` + 窗口 `[target_min, target_max]`。
-- **揭示距离 `reveal_dist = R`（默认 8.0 m）**：一段报废料仅在距离当前切割启动点 ≤ `R` 米时，才"揭示"给 agent。
+- **揭示距离 `reveal_lead = R`（最终配置默认 `10.0` m）**：一段报废料仅在距离当前切割启动点 ≤ `R` 米时，才"揭示"给 agent。（单位即"米"；v=1.0 时它也等于"提前的分钟数"，文档简称"米"。）
 - 因 `v×(tc+tr)=4m < 4.8m`，切割机总能跟上 → **无吞吐瓶颈**。时间只在"揭示与到位"时差上起作用，不构成物理约束。
 
-> 为什么 `R < max_basic`：若把折现距离设成原题的 60m 缓冲（远大于 12.6m 切段），agent 在承诺每块之前总能看见该块内所有异常，从而永远主动避开 → 退化为离线。取 `R` 小于最大切段，使"远端未知带"存在，才产生真实不确定性。这是本任务与离线版难度分界的核心旋钮。
+> 为什么 `R < max_basic`：若把揭示距离设成原题的 60m 缓冲（远大于 12.6m 切段），agent 在承诺每块之前总能看见该块内所有异常，从而永远主动避开 → 退化为离线。取 `R` 小于最大切段，使"远端未知带"存在，才产生真实不确定性。这是本任务与离线版难度分界的核心旋钮。
 
 ## 2. 材料坐标与时序
 
@@ -21,24 +21,25 @@
 
 异常由隐藏种子确定：一段报废料占据流区间 `[x_a, x_a+0.8]`。它在**距切割点 ≤ R 时揭示**（即当 `x_a ≤ cut_pos + R`），并将其位置/到达时间加入 agent 可见列表。
 
-## 3. 求解接口（闭环 REPL）
+## 3. 求解接口（每决策点一次调用）
 
-agent 程序**启动一次**：`python solver.py <instance.json>`（instance 里**不含任何异常/异常种子**），进入循环：
+agent 程序被评测器**每个切割决策点调用一次**：`python solver.py <state.json>` → stdout 打印决策。
 
-- 从 stdin 读一行**状态 JSON**：
+- 从 `state.json`（不含任何异常/异常种子，且**不含完整报废表**）读**当前决策点状态**，字段如下：
 ```json
-{"cut_pos": 12.6, "committed": [9.1, 11.4], "visible_defects": [{"x": 20.0}], "target": 9.5,
- "target_min": 9.0, "target_max": 10.0, "limits": {"min_basic":4.8,"max_basic":12.6,"min_process":8.0,"max_process":11.6},
- "total_length": 106.2}
+{"cut_pos": 12.6, "committed": [9.1, 11.4], "visible_defects": [{"x": 20.0, "x_end": 20.8}],
+ "target": 9.5, "target_min": 9.0, "target_max": 10.0,
+ "limits": {"min_basic":4.8,"max_basic":12.6,"min_process":8.0,"max_process":11.6},
+ "total_length": 106.2, "reveal_lead": 10.0}
 ```
   - `cut_pos`：当前切割启动点（下一段的起点）。
   - `committed`：已承诺的切段长度列表（之和 = cut_pos）。
-  - `visible_defects`：**已揭示**（距 cut_pos ≤ R）且尚未被切过/尚未过去的报废段流位置（只含 `x_a`，长度固定 0.8m）。
-  - `reveal_dist`、`total_length`、process 等。
-- 向 stdout 写一行**决策 JSON**：`{"piece_length": L}`，`L ∈ [4.8, 12.6]`。
-- 评审器按流推进：`cut_pos += L`，重复喂状态/拿下一刀；当 `S - cut_pos ≤ 12.6` 时强制收尾（最后一段 = `S - cut_pos`，agent 无需作答）。
+  - `visible_defects`：**已揭示**（距 cut_pos ≤ `${reveal_lead}`）且尚未被切过/尚未过去的报废段流位置（含 `x` 起点与 `x_end`，长度固定 0.8m）。
+  - `reveal_lead`：本次实例的揭示距离（米）。
+- 向 stdout 打印一行**决策 JSON**：`{"piece_length": L}`，`L ∈ [4.8, 12.6]`。
+- 评测器按流推进：`cut_pos += L`，重复"喂状态 → 拿下一刀"；当 `S - cut_pos ≤ 12.6` 时强制收尾（最后一段 = `S - cut_pos`，agent 无需作答）。
 
-agent **永远看不到** `x_a > cut_pos + R` 的异常（未揭示）；也看不到完整报废表。`visible_defects` 只含已揭示的。
+agent **永远看不到** `x_a > cut_pos + reveal_lead` 的异常（未揭示）；也看不到完整报废表。`visible_defects` 只含已揭示的。
 
 ## 4. 污染判定（不可规避的代价，难度来源）
 

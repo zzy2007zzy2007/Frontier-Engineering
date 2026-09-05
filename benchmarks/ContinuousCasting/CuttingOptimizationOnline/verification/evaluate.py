@@ -132,6 +132,21 @@ def _run_one(prog: Path, inst_path: Path, time_budget: float, py: str, tmp: Path
                        "n_cuts": len(cuts)}
 
 
+def _instances_dir() -> Path:
+    """在线版实例目录：只从宿主源 benchmark 目录加载（不复制进沙箱）。
+
+    在线版的关键是"隐藏报废表"——实例文件含完整 defects/anomaly_seed，绝不能进候选可见
+    目录（否则候选可读 JSON 拿到全知解作弊）。因此在沙箱内（本地无 data/instances 时）改从
+    FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR 加载；直跑（非沙箱）时回退到本地目录。
+    """
+    src = os.environ.get("FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR", "").strip()
+    if src:
+        host = Path(src) / "verification" / "data" / "instances"
+        if host.is_dir():
+            return host
+    return DATA_DIR
+
+
 def evaluate(program_path: str, *, time_budget: float = 60.0, python: str | None = None,
              data_dir: str | Path | None = None, reveal_lead: float | None = None) -> dict[str, Any]:
     prog = Path(program_path).resolve()
@@ -140,10 +155,10 @@ def evaluate(program_path: str, *, time_budget: float = 60.0, python: str | None
 
     violations = check_candidate(prog)
 
-    inst_dir = Path(data_dir).resolve() if data_dir else DATA_DIR
+    inst_dir = Path(data_dir).resolve() if data_dir else _instances_dir()
     instances = sorted(inst_dir.glob("instance_*.json")) if inst_dir.is_dir() else []
     if not instances:
-        # 若无固定实例集，现场生成一批（便于直接评测）
+        # 若无固定实例集，现场生成一批（便于直接评测；仅宿主，不进沙箱）
         tmp = Path(tempfile.mkdtemp(prefix="oc_inst_"))
         instances = _generate_instances(7, 6, tmp, reveal_lead or 10.0)
 

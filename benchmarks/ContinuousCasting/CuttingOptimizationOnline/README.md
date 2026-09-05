@@ -6,8 +6,8 @@ An **original** Frontier-Engineering benchmark extending the offline
 
 A continuously cast steel billet is drawn past a cutter. **Crystallizer anomalies create
 0.8 m scrap segments, but the agent is only told about a segment when it is within
-`reveal_lead` metres of the cut line** (default 8.0 m → hidden anomalies; `reveal_lead = 60`
-is the "faithful" setting where the agent sees all relevant defects). The agent is invoked
+`reveal_lead` metres of the cut line** (final config `reveal_lead = 10` → hidden anomalies;
+`reveal_lead = 60` is the "faithful" setting where the agent sees all relevant defects). The agent is invoked
 *once per cut decision* with the **current visible state only** — it never sees future
 defects — and must choose the next cut length. At the end the plan is scored against the
 **full hidden defect set**: any piece overlapping a scrap segment is contaminated and fully
@@ -88,6 +88,12 @@ candidate rejected, runtime generation), and sandbox-evaluator consistency.
 
 ## Integrity / threat model
 
+- **The instance data (which embeds the full hidden defect schedule) is NOT copied into the
+  sandbox.** `frontier_eval/copy_files.txt` excludes `verification/data/instances`; the
+  evaluator loads the fixed instances from the host source benchmark dir
+  (`FRONTIER_EVAL_UNIFIED_SOURCE_BENCHMARK_DIR`), so a candidate can never read the hidden
+  defects out of a data file (it only ever gets the visible `state`). This is the core
+  anti-cheat for the online task.
 - `verification/ref_solver.py` and `verification/generator.py` are **not** copied into the
   sandbox and are additionally forbidden by the validator (`ref_solver`, `generator`,
   `anomaly_seed` tokens).
@@ -132,6 +138,11 @@ consistently across all three frameworks. This is the **key difference vs the of
 openevolve reaches the (offline) optimal exactly. The per-framework spread is small
 (std ≈ 0.4–1.2), so agent scores settle around the "safe short-cut" plateau (~70) that limits how
 far an online agent can get without full foresight.
+
+> Methodological note: "online agents do not reach the clairvoyant optimum" is an **empirical**
+> observation (3 frameworks × 3 runs each are all below 76.4), not a proven structural lower bound.
+> To establish it rigorously one would add an "online oracle" reference layer — the best strategy
+> that uses only the revealed information (respecting `reveal_lead`) — and show agents fall below it.
 
 > Honest note: agents improve in step-jumps (stuck at baseline for several generations, then a
 > single mutation cracks ~70), not gradual climbing — consistent with a hard constraint where

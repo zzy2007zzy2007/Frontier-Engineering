@@ -1,4 +1,4 @@
-# CuttingOptimization: Online Optimization of Continuous-Casting Cutting (Frontier-Eng Benchmark)
+# CuttingOptimization: Continuous-Casting Cutting Optimization — offline/static (Frontier-Eng Benchmark)
 
 An **original** Frontier-Engineering benchmark inspired by the CUMCM 2021 Problem D
 («连铸切割的在线优化»), formalized into a self-contained, deterministic optimization task.
