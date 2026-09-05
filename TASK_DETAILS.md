@@ -353,7 +353,7 @@ We welcome new engineering problem ideas — even without complete verification 
     </tr>
     <tr>
       <td><code>CuttingOptimizationOnline</code></td>
-      <td>Online (closed-loop) cutting where 0.8 m scrap segments are revealed only within a reveal horizon — info asymmetry keeps agents below the clairvoyant optimum</td>
+      <td>Online (closed-loop) cutting where 0.8 m scrap segments are revealed only within a reveal horizon — info asymmetry empirically keeps agents below the clairvoyant optimum (observed, not a proven lower bound)</td>
     </tr>
     <tr>
       <td><b>AdditiveManufacturing</b></td>

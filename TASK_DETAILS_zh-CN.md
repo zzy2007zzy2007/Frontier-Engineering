@@ -353,7 +353,7 @@ Frontier-Eng 目前已覆盖以下领域的任务。每个任务均配有可运�
     </tr>
     <tr>
       <td><code>CuttingOptimizationOnline</code></td>
-      <td>在线（闭环）切割：0.8m 报废段只在揭示提前量内才告知 agent——信息不对称让 agent 达不到全知最优</td>
+      <td>在线（闭环）切割：0.8m 报废段只在揭示提前量内才告知 agent——信息不对称使 agent（经验上）低于全知最优（观察结果，非严格下界证明）</td>
     </tr>
     <tr>
       <td><b>AdditiveManufacturing</b></td>
