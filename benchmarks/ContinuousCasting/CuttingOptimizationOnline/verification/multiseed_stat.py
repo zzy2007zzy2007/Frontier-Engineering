@@ -64,7 +64,7 @@ def main() -> int:
     parser.add_argument("--runs-dir", required=True, help="运行目录或 glob 模式")
     parser.add_argument("--pattern", default=None, help="追加的子 glob 模式")
     parser.add_argument("--reference", type=float, default=DEFAULT_REFERENCE,
-                        help="参考解利用率（默认 88.72）")
+                        help="参考解利用率（默认 76.37）")
     args = parser.parse_args()
 
     pairs = collect(args.runs_dir, args.pattern)
